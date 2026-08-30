@@ -12,16 +12,10 @@ export default function Dashboard({ activeTab }) {
   const [appState, setAppState] = useState('IDLE');
   const [apiUrl, setApiUrl] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [selectedTool, setSelectedTool] = useState({
-    id: 'get_user',
-    name: 'get_user',
-    method: 'GET',
-    path: '/api/v1/users/{id}',
-    description: 'Retrieve detailed information for a specific user by their unique identifier.',
-    params: [
-      { name: 'id', required: true, type: 'integer', description: 'Unique identifier of user' }
-    ]
-  });
+  const [selectedTool, setSelectedTool] = useState(null);
+  const [tools, setTools] = useState([]);
+  const [apiName, setApiName] = useState('');
+  const [authType, setAuthType] = useState('');
 
   const [timelineSteps, setTimelineSteps] = useState([
     { title: 'User Request Received', done: true },
@@ -37,13 +31,21 @@ export default function Dashboard({ activeTab }) {
     setAppState('ANALYZING');
   };
 
-  const handleTriggerError = (url) => {
+  const handleTriggerError = (url, customMsg) => {
     setApiUrl(url);
-    setErrorMsg(`The API documentation at ${url} could not be parsed. Ensure the URL is public and follows OpenAPI 3.0+ specifications.`);
+    setErrorMsg(customMsg || `The API documentation at ${url} could not be parsed. Ensure the URL is public and follows OpenAPI 3.0+ specifications.`);
     setAppState('ERROR');
   };
 
-  const handleAnalysisComplete = () => {
+  const handleAnalysisComplete = (data) => {
+    if (data) {
+      setTools(data.tools || []);
+      setApiName(data.apiName || '');
+      setAuthType(data.authType || '');
+      if (data.tools && data.tools.length > 0) {
+        setSelectedTool(data.tools[0]);
+      }
+    }
     setAppState('GENERATED_TOOLS');
   };
 
@@ -51,6 +53,10 @@ export default function Dashboard({ activeTab }) {
     setAppState('IDLE');
     setApiUrl('');
     setErrorMsg('');
+    setTools([]);
+    setSelectedTool(null);
+    setApiName('');
+    setAuthType('');
   };
 
   // Render view depending on navigation tab & state
@@ -106,6 +112,7 @@ export default function Dashboard({ activeTab }) {
         <AnalysisView
           url={apiUrl}
           onComplete={handleAnalysisComplete}
+          onTriggerError={handleTriggerError}
           onCancel={handleReset}
         />
       )}
@@ -141,6 +148,7 @@ export default function Dashboard({ activeTab }) {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-unit-6">
             <div className="lg:col-span-7">
               <GeneratedToolsView
+                tools={tools}
                 selectedTool={selectedTool}
                 onSelectTool={setSelectedTool}
                 onOpenAgent={() => setAppState('AGENT')}

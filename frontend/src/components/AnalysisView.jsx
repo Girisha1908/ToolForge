@@ -1,28 +1,129 @@
 import React, { useEffect, useState } from 'react';
+import { parseApi } from '../services/apiService';
 
-export default function AnalysisView({ url, onComplete, onCancel }) {
-  const [progressStep, setProgressStep] = useState(2); // Step 2 is active (Discovering endpoints)
-  const [percent, setPercent] = useState(65);
+export default function AnalysisView({ url, onComplete, onTriggerError, onCancel }) {
+  const [percent, setPercent] = useState(0);
+  const [toolsCount, setToolsCount] = useState(0);
+  const [errorOccurred, setErrorOccurred] = useState(false);
 
   useEffect(() => {
-    // Automatically progress through the analysis steps for the demo
+    let parsedData = null;
+    let isMounted = true;
+
+    // Trigger the real parsing process on the backend
+    parseApi(url)
+      .then((data) => {
+        if (isMounted) {
+          parsedData = data;
+          setToolsCount(data.tools?.length || 0);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        if (isMounted) {
+          setErrorOccurred(true);
+          if (onTriggerError) {
+            onTriggerError(url, `API Analysis failed: ${err.message}`);
+          }
+        }
+      });
+
+    // Run progress bar animation
     const timer = setInterval(() => {
+      if (errorOccurred) {
+        clearInterval(timer);
+        return;
+      }
       setPercent((prev) => {
         if (prev >= 100) {
           clearInterval(timer);
-          setTimeout(() => {
-            onComplete();
-          }, 600);
+          // Wait until the real backend parse request resolves
+          const checkInterval = setInterval(() => {
+            if (parsedData) {
+              clearInterval(checkInterval);
+              onComplete(parsedData);
+            }
+          }, 100);
           return 100;
         }
-        return prev + 15;
+        return prev + 5;
       });
-    }, 400);
+    }, 150);
 
-    return () => clearInterval(timer);
-  }, [onComplete]);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [url, errorOccurred, onComplete, onTriggerError]);
 
-  const targetHost = url ? url.replace(/^https?:\/\//, '').toUpperCase() : 'API.EXAMPLE.COM/V1';
+  const targetHost = url ? url.replace(/^https?:\/\//, '').split('/')[0].toUpperCase() : 'API.EXAMPLE.COM';
+
+  const getStepState = (stepIndex) => {
+    const thresholds = [0, 15, 35, 55, 75, 90];
+    const threshold = thresholds[stepIndex];
+    const nextThreshold = stepIndex < 5 ? thresholds[stepIndex + 1] : 101;
+
+    if (percent >= nextThreshold) return 'done';
+    if (percent >= threshold && percent < nextThreshold) return 'active';
+    return 'pending';
+  };
+
+  const renderStep = (index, title, activeSubtitle, doneSubtitle) => {
+    const state = getStepState(index);
+    if (state === 'done') {
+      return (
+        <div key={index} className="flex items-start gap-unit-4 opacity-80 transition-opacity">
+          <div className="mt-1 flex-shrink-0">
+            <div className="w-6 h-6 rounded-full bg-secondary/20 flex items-center justify-center border border-secondary/50">
+              <span className="material-symbols-outlined text-secondary text-[16px]">check</span>
+            </div>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-base font-medium text-on-surface">{title}</h3>
+            <p className="font-mono text-xs text-secondary uppercase tracking-widest mt-0.5">{doneSubtitle}</p>
+          </div>
+        </div>
+      );
+    }
+    if (state === 'active') {
+      return (
+        <div key={index} className="flex items-start gap-unit-4 relative group">
+          <div className="mt-1 flex-shrink-0 relative">
+            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center border border-primary relative z-10">
+              <span className="material-symbols-outlined text-primary text-[14px] animate-spin">refresh</span>
+            </div>
+            <div className="absolute inset-0 rounded-full border border-primary animate-ping opacity-50 z-0"></div>
+          </div>
+          <div className="flex-1 bg-surface rounded-lg p-unit-4 border-l-2 border-primary -mt-unit-2 shadow-md">
+            <h3 className="text-base font-bold text-primary">{title}</h3>
+            <div className="flex items-center gap-unit-2 mt-2">
+              <div className="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${percent}%` }}
+                ></div>
+              </div>
+              <span className="font-mono text-xs text-on-surface-variant min-w-[40px] text-right">{percent}%</span>
+            </div>
+            <p className="text-xs text-on-surface-variant mt-2">{activeSubtitle}</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={index} className="flex items-start gap-unit-4 opacity-40">
+        <div className="mt-1 flex-shrink-0">
+          <div className="w-6 h-6 rounded-full bg-surface-variant flex items-center justify-center border border-outline-variant/50">
+            <div className="w-2 h-2 rounded-full bg-outline-variant"></div>
+          </div>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-base font-medium text-on-surface-variant">{title}</h3>
+          <p className="font-mono text-xs text-outline uppercase tracking-widest mt-0.5">Pending</p>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-container-max mx-auto px-unit-8 w-full py-unit-8 flex flex-col gap-unit-8 pt-20">
@@ -46,7 +147,6 @@ export default function AnalysisView({ url, onComplete, onCancel }) {
         {/* Left Column: Analysis Progress Card */}
         <div className="lg:col-span-8 flex flex-col gap-unit-6">
           <div className="bg-surface-container rounded-xl shadow-lg border border-outline-variant/30 overflow-hidden relative">
-            {/* Ambient glowing background effect */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
             
             <div className="p-unit-6 border-b border-outline-variant/30 flex justify-between items-center relative z-10">
@@ -70,107 +170,19 @@ export default function AnalysisView({ url, onComplete, onCancel }) {
             <div className="p-unit-8 relative z-10">
               {/* Progress Checklist */}
               <div className="flex flex-col gap-unit-6">
-                {/* Step 1: Completed */}
-                <div className="flex items-start gap-unit-4 opacity-80 transition-opacity">
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-secondary/20 flex items-center justify-center border border-secondary/50">
-                      <span className="material-symbols-outlined text-secondary text-[16px]">check</span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-on-surface">Fetching API specification</h3>
-                    <p className="font-mono text-xs text-secondary uppercase tracking-widest mt-0.5">Complete</p>
-                  </div>
-                </div>
-
-                {/* Step 2: Completed */}
-                <div className="flex items-start gap-unit-4 opacity-80 transition-opacity">
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-secondary/20 flex items-center justify-center border border-secondary/50">
-                      <span className="material-symbols-outlined text-secondary text-[16px]">check</span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-on-surface">Detecting authentication</h3>
-                    <p className="font-mono text-xs text-secondary uppercase tracking-widest mt-0.5">Bearer Token Found</p>
-                  </div>
-                </div>
-
-                {/* Step 3: Active in progress */}
-                <div className="flex items-start gap-unit-4 relative group">
-                  <div className="mt-1 flex-shrink-0 relative">
-                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center border border-primary relative z-10">
-                      <span className="material-symbols-outlined text-primary text-[14px] animate-spin">refresh</span>
-                    </div>
-                    <div className="absolute inset-0 rounded-full border border-primary animate-ping opacity-50 z-0"></div>
-                  </div>
-                  <div className="flex-1 bg-surface rounded-lg p-unit-4 border-l-2 border-primary -mt-unit-2 shadow-md">
-                    <h3 className="text-base font-bold text-primary">Discovering endpoints</h3>
-                    <div className="flex items-center gap-unit-2 mt-2">
-                      <div className="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
-                        <div 
-                          className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                          style={{ width: `${percent}%` }}
-                        ></div>
-                      </div>
-                      <span className="font-mono text-xs text-on-surface-variant min-w-[40px] text-right">{percent}%</span>
-                    </div>
-                    <div className="mt-3 flex items-center gap-unit-2 flex-wrap">
-                      <span className="font-mono text-xs text-on-surface-variant bg-surface-container-low px-2 py-1 rounded border border-outline-variant/30">
-                        GET /users/{'{id}'}
-                      </span>
-                      <span className="font-mono text-xs text-on-surface-variant bg-surface-container-low px-2 py-1 rounded border border-outline-variant/30 opacity-60">
-                        ... scanning
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 4: Pending */}
-                <div className="flex items-start gap-unit-4 opacity-40">
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-surface-variant flex items-center justify-center border border-outline-variant/50">
-                      <div className="w-2 h-2 rounded-full bg-outline-variant"></div>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-on-surface-variant">Extracting request schemas</h3>
-                    <p className="font-mono text-xs text-outline uppercase tracking-widest mt-0.5">Pending</p>
-                  </div>
-                </div>
-
-                {/* Step 5: Pending */}
-                <div className="flex items-start gap-unit-4 opacity-40">
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-surface-variant flex items-center justify-center border border-outline-variant/50">
-                      <div className="w-2 h-2 rounded-full bg-outline-variant"></div>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-on-surface-variant">Extracting response schemas</h3>
-                    <p className="font-mono text-xs text-outline uppercase tracking-widest mt-0.5">Pending</p>
-                  </div>
-                </div>
-
-                {/* Step 6: Pending */}
-                <div className="flex items-start gap-unit-4 opacity-40">
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-surface-variant flex items-center justify-center border border-outline-variant/50">
-                      <div className="w-2 h-2 rounded-full bg-outline-variant"></div>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-on-surface-variant">Building tool definitions</h3>
-                    <p className="font-mono text-xs text-outline uppercase tracking-widest mt-0.5">Pending</p>
-                  </div>
-                </div>
+                {renderStep(0, "Fetching API specification", "Connecting to documentation source...", "Connection Established")}
+                {renderStep(1, "Detecting authentication", "Scanning for security headers and tokens...", "Auth Schemas Identified")}
+                {renderStep(2, "Discovering endpoints", "Parsing OpenAPI paths and HTTP methods...", "Endpoints Cataloged")}
+                {renderStep(3, "Extracting request schemas", "Analyzing JSON parameters and payload structures...", "Payload Types Mapped")}
+                {renderStep(4, "Extracting response schemas", "Parsing successful and error payload schemas...", "Responses Modelled")}
+                {renderStep(5, "Building tool definitions", "Creating LLM function calling schemas...", "Tool Definitions Built")}
               </div>
 
               {/* Status footer pill inside card */}
               <div className="mt-unit-8 pt-unit-4 border-t border-outline-variant/20 flex items-center justify-between">
                 <span className="font-mono text-xs text-primary font-bold uppercase tracking-wider flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-                  8 ENDPOINTS DISCOVERED
+                  {toolsCount > 0 ? `${toolsCount} ENDPOINTS DISCOVERED` : "SCANNING ENDPOINTS..."}
                 </span>
                 <span className="font-mono text-xs text-on-surface-variant">Auto-mapping parameters...</span>
               </div>
@@ -180,7 +192,6 @@ export default function AnalysisView({ url, onComplete, onCancel }) {
 
         {/* Right Sidebar */}
         <div className="lg:col-span-4 flex flex-col gap-unit-6">
-          {/* Active Connectors */}
           <div className="bg-surface-container rounded-xl p-unit-6 border border-outline-variant/30">
             <h3 className="font-mono text-xs uppercase tracking-widest text-on-surface-variant mb-unit-4 flex items-center justify-between">
               <span>Active Connectors</span>
@@ -206,7 +217,6 @@ export default function AnalysisView({ url, onComplete, onCancel }) {
             </div>
           </div>
 
-          {/* Tool Structuring Guide Info */}
           <div className="bg-surface-container rounded-xl p-unit-6 border border-outline-variant/30 bg-gradient-to-br from-surface-container to-surface-container-high relative overflow-hidden">
             <div className="absolute top-0 right-0 p-3 opacity-10 text-primary">
               <span className="material-symbols-outlined text-6xl">schema</span>

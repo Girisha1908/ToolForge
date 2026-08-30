@@ -13,12 +13,14 @@ from tool_generator.schemas import (
     ToolExecutionResult
 )
 from tool_executor.executor import ToolExecutor, ToolExecutionError
+from agent.agent import AgentEngine
 
 router = APIRouter()
 
 parser_instance = APIParser()
 generator_instance = ConnectorGenerator()
 executor_instance = ToolExecutor()
+agent_instance = AgentEngine()
 
 
 class ParseDocRequest(BaseModel):
@@ -108,3 +110,17 @@ async def execute_tool(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Tool execution failed: {str(exc)}")
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(description="User prompt/message for the agent")
+
+
+@router.post("/agent/chat")
+async def agent_chat(request: AgentChatRequest):
+    """
+    Agent chat endpoint that takes user prompt, runs the AgentEngine against registered tools.
+    """
+    tools = default_registry.list_tools()
+    result = await agent_instance.run(request.message, tools)
+    return result

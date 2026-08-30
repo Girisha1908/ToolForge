@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import { agentChat } from '../services/apiService';
 
 export default function AgentView({ onUpdateTimeline }) {
   const [inputMessage, setInputMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // Default pre-populated conversation match for demo
+  // Default pre-populated conversation matching the Petstore / User demo
   const [messages, setMessages] = useState([
     {
       id: '1',
@@ -14,14 +15,14 @@ export default function AgentView({ onUpdateTimeline }) {
     {
       id: '2',
       sender: 'agent',
-      action: 'Using GET_USER',
+      action: 'Using get_user',
       args: { id: 42 },
-      status: 'API request successful',
+      status: '200 OK',
       resultText: 'User 42 is Rahul. Email: rahul@example.com.'
     }
   ]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     if (e) e.preventDefault();
     if (!inputMessage.trim()) return;
 
@@ -33,53 +34,50 @@ export default function AgentView({ onUpdateTimeline }) {
     setMessages(prev => [...prev, userMsgObj]);
     setIsProcessing(true);
 
-    // Update execution timeline events
-    if (onUpdateTimeline) {
-      onUpdateTimeline([
-        { title: 'User Request Received', done: true },
-        { title: 'Agent Selected Tool: get_user', done: true },
-        { title: 'Arguments Validated', done: true },
-        { title: 'API Request Sent', done: true },
-        { title: 'Response Received', done: true },
-        { title: 'Result Returned to User', done: true }
-      ]);
-    }
+    try {
+      // Call backend POST /api/agent/chat
+      const response = await agentChat(userMsg);
 
-    // Simulate Agent Tool Calling & Response
-    setTimeout(() => {
-      let agentMsg = {};
-      if (userMsg.toLowerCase().includes('42')) {
-        agentMsg = {
-          id: String(Date.now() + 1),
-          sender: 'agent',
-          action: 'Using GET_USER',
-          args: { id: 42 },
-          status: 'API request successful',
-          resultText: 'User 42 is Rahul. Email: rahul@example.com.'
-        };
-      } else if (userMsg.toLowerCase().includes('list') || userMsg.toLowerCase().includes('users')) {
-        agentMsg = {
-          id: String(Date.now() + 1),
-          sender: 'agent',
-          action: 'Using LIST_USERS',
-          args: { limit: 10 },
-          status: 'API request successful',
-          resultText: 'Found 2 users: Rahul (id: 42, rahul@example.com) and Sarah (id: 43, sarah@example.com).'
-        };
-      } else {
-        agentMsg = {
-          id: String(Date.now() + 1),
-          sender: 'agent',
-          action: 'Using GET_USER',
-          args: { id: 42 },
-          status: 'API request successful',
-          resultText: `Processed request for "${userMsg}". Selected tool get_user returned active user details.`
-        };
+      // Update execution timeline from backend trace
+      if (onUpdateTimeline && response.trace) {
+        const traceSteps = [
+          { title: 'User Request Received', done: response.trace.includes('request_received') },
+          { title: `Agent Selected Tool: ${response.tool || 'get_user'}`, done: response.trace.includes('tool_selected') || !!response.tool },
+          { title: 'Arguments Validated', done: response.trace.includes('arguments_validated') || !!response.arguments },
+          { title: 'API Request Sent', done: response.trace.includes('api_request_sent') || response.status_code === 200 },
+          { title: 'Response Received', done: response.trace.includes('response_received') || response.status_code === 200 },
+          { title: 'Result Returned to User', done: response.trace.includes('result_returned') || response.success }
+        ];
+        onUpdateTimeline(traceSteps);
       }
 
+      // Add Agent Message
+      const agentMsg = {
+        id: String(Date.now() + 1),
+        sender: 'agent',
+        action: response.tool ? `Using ${response.tool}` : (response.action || 'No tool selected'),
+        args: response.arguments || response.args || {},
+        status: response.status_code ? `HTTP ${response.status_code}` : (response.status || 'OK'),
+        resultText: response.message || response.resultText || 'Completed request.'
+      };
+
       setMessages(prev => [...prev, agentMsg]);
+    } catch (err) {
+      console.error('Agent execution error:', err);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          sender: 'agent',
+          action: 'Execution Error',
+          args: {},
+          status: 'Error',
+          resultText: 'An error occurred while communicating with the agent endpoint.'
+        }
+      ]);
+    } finally {
       setIsProcessing(false);
-    }, 800);
+    }
   };
 
   return (
@@ -124,14 +122,16 @@ export default function AgentView({ onUpdateTimeline }) {
                 </div>
 
                 {/* Arguments Code Block */}
-                <div>
-                  <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider block mb-1">
-                    Arguments
-                  </span>
-                  <pre className="bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/20 font-mono text-xs text-on-surface">
-                    {JSON.stringify(msg.args, null, 2)}
-                  </pre>
-                </div>
+                {msg.args && Object.keys(msg.args).length > 0 && (
+                  <div>
+                    <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider block mb-1">
+                      Arguments
+                    </span>
+                    <pre className="bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/20 font-mono text-xs text-on-surface">
+                      {JSON.stringify(msg.args, null, 2)}
+                    </pre>
+                  </div>
+                )}
 
                 {/* Final Result Text */}
                 <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/20 text-sm text-on-surface leading-relaxed">
@@ -145,7 +145,7 @@ export default function AgentView({ onUpdateTimeline }) {
         {isProcessing && (
           <div className="self-start bg-surface-container border border-outline-variant/30 rounded-xl p-3 text-xs text-primary font-mono flex items-center gap-2 animate-pulse">
             <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
-            Agent selecting tool & invoking API...
+            Gemini selecting registered tool & invoking HTTP executor...
           </div>
         )}
       </div>
@@ -156,7 +156,7 @@ export default function AgentView({ onUpdateTimeline }) {
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Enter a command for the agent..."
+          placeholder="Enter a command for the agent... (e.g. Find pet 1 or Find user 42)"
           className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl pl-4 pr-12 py-3 font-sans text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors shadow-inner"
         />
         <button
