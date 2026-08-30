@@ -84,8 +84,13 @@ INSTRUCTIONS:
 1. If you need to execute a tool to fetch or process information, output a TOOL_CALL JSON object:
    {{"type": "tool_call", "tool_name": "exact_name", "arguments": {{...}}}}
 
-2. If you have enough information to answer the user, output a FINAL_ANSWER JSON object:
-   {{"type": "final_answer", "text": "Your complete answer here"}}
+2. If tool execution results are present in the conversation history, synthesize a clear, helpful, natural language FINAL_ANSWER directly answering the user's prompt.
+   - Summarize, list, or format the information cleanly for the user.
+   - Do NOT dump raw JSON strings or raw "_truncated_text" keys in the final answer.
+   - Extract the relevant fields (such as titles, prices, categories, statuses, counts, etc.) and present them in plain English or clean bullet points.
+
+   Output a FINAL_ANSWER JSON object:
+   {{"type": "final_answer", "text": "Your clear, well-formatted natural language answer here"}}
 
 3. Return ONLY valid JSON for one of the two formats above.
 """
@@ -124,31 +129,81 @@ INSTRUCTIONS:
             if item.get("role") == "user":
                 user_msg = item.get("text", "")
 
-        # Look for tool call already executed
         executed_tools = {item.get("tool_name") for item in conversation_history if item.get("role") == "tool_result"}
 
         if tools and not executed_tools:
-            first_tool = tools[0]
-            # Simple heuristic match
+            matched_tool = tools[0]
+            user_lower = user_msg.lower()
+            for t in tools:
+                if t.name.lower() in user_lower or any(word in t.name.lower() for word in user_lower.split()):
+                    matched_tool = t
+                    break
+
             return {
                 "type": "tool_call",
-                "tool_name": first_tool.name,
+                "tool_name": matched_tool.name,
                 "arguments": {}
             }
 
-        # If a tool was already run or no tools match
         tool_results = [item for item in conversation_history if item.get("role") == "tool_result"]
         if tool_results:
             last_res = tool_results[-1]
+            raw_result = last_res.get("result")
+            tool_name = last_res.get("tool_name", "")
+
+            formatted_text = self._format_heuristic_summary(user_msg, tool_name, raw_result)
             return {
                 "type": "final_answer",
-                "text": f"Tool '{last_res.get('tool_name')}' executed successfully. Result: {json.dumps(last_res.get('result'))}"
+                "text": formatted_text
             }
 
         return {
             "type": "final_answer",
             "text": f"Processed user message: {user_msg}"
         }
+
+    @staticmethod
+    def _format_heuristic_summary(user_msg: str, tool_name: str, raw_result: Any) -> str:
+        """Formats clean, human-readable natural language answers from tool result payloads."""
+        if not raw_result:
+            return f"Tool '{tool_name}' executed successfully, but returned no data."
+
+        data_str = ""
+        if isinstance(raw_result, dict) and "_truncated_text" in raw_result:
+            data_str = raw_result["_truncated_text"]
+        elif isinstance(raw_result, (dict, list)):
+            data_str = json.dumps(raw_result)
+        else:
+            data_str = str(raw_result)
+
+        user_lower = user_msg.lower()
+
+        if "category" in user_lower or "categories" in user_lower:
+            categories = set(re.findall(r'category"\s*:\s*"([^"]+)"', data_str, re.IGNORECASE))
+            if categories:
+                formatted_cats = "\n".join(f"- {c}" for c in sorted(categories))
+                return f"Here are the available product categories:\n\n{formatted_cats}"
+
+        titles = re.findall(r'title"\s*:\s*"([^"]+)"', data_str, re.IGNORECASE)
+        prices = re.findall(r'price"\s*:\s*([\d\.]+)', data_str)
+
+        if titles:
+            items_list = []
+            for idx, title in enumerate(titles[:10]):
+                price_str = f" (${prices[idx]})" if idx < len(prices) else ""
+                items_list.append(f"{idx + 1}. {title}{price_str}")
+
+            summary = f"Retrieved {len(titles)} products:\n\n" + "\n".join(items_list)
+            if len(titles) > 10:
+                summary += f"\n\n*(Showing top 10 items out of {len(titles)} total)*"
+            return summary
+
+        clean_text = re.sub(r'[\{\}\[\]"]', '', data_str)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        if len(clean_text) > 300:
+            clean_text = clean_text[:300] + "..."
+
+        return f"Tool '{tool_name}' executed successfully:\n\n{clean_text}"
 
 
 class AgentRuntime:
