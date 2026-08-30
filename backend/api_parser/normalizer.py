@@ -22,7 +22,15 @@ class APINormalizer:
         api_name = spec.api_name.strip() if spec.api_name else "Example API"
 
         # 2. Clean Base URL
-        base_url = spec.base_url.rstrip("/") if spec.base_url else None
+        base_url = spec.base_url.strip().rstrip("/") if spec.base_url else None
+        if spec.source_url and spec.source_url.startswith("http"):
+            if not base_url:
+                from urllib.parse import urlparse
+                parsed_src = urlparse(spec.source_url)
+                base_url = f"{parsed_src.scheme}://{parsed_src.netloc}"
+            elif not base_url.startswith("http://") and not base_url.startswith("https://"):
+                from urllib.parse import urljoin
+                base_url = urljoin(spec.source_url, base_url).rstrip("/")
 
         # 3. Clean Authentication
         auth = self._normalize_auth(spec.authentication)

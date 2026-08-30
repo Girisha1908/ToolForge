@@ -133,6 +133,15 @@ class StructuredSpecParser:
             base_path = data.get("basePath", "")
             base_url = f"{schemes[0]}://{data['host']}{base_path}"
 
+        # If base_url is relative or missing, resolve against source_url
+        if source_url and source_url.startswith("http"):
+            if not base_url:
+                parsed_src = urlparse(source_url)
+                base_url = f"{parsed_src.scheme}://{parsed_src.netloc}"
+            elif not base_url.startswith("http://") and not base_url.startswith("https://"):
+                from urllib.parse import urljoin
+                base_url = urljoin(source_url, base_url)
+
         components = data.get("components", {})
         definitions = data.get("definitions", {})
 

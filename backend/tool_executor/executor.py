@@ -72,18 +72,12 @@ class ToolExecutor:
         # Step 3: Validate target URL against SSRF safety rules
         resolved_ip, hostname = DocFetcher.validate_and_resolve_url(target_url)
 
-        # Reconstruct execution target URL using resolved IP and Host header
-        parsed = urlparse(target_url)
-        port_suffix = f":{parsed.port}" if parsed.port else ""
-        exec_target = f"{parsed.scheme}://{resolved_ip}{port_suffix}{parsed.path}"
-        headers["Host"] = hostname
-
         # Step 4: Execute HTTP request
         try:
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
                 res = await client.request(
                     method=tool.method,
-                    url=exec_target,
+                    url=target_url,
                     params=query_params,
                     headers=headers,
                     json=json_body
@@ -153,7 +147,12 @@ class ToolExecutor:
 
     def _build_path_url(self, tool: ToolDefinition, arguments: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """Substitutes path parameters and constructs full target URL."""
-        base_url = tool.base_url or "https://api.example.com"
+        base_url = tool.base_url or "https://petstore3.swagger.io/api/v3"
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            if base_url.startswith("/"):
+                base_url = f"https://petstore3.swagger.io{base_url}"
+            else:
+                base_url = f"https://petstore3.swagger.io/{base_url}"
         base_url = base_url.rstrip("/")
         path = tool.path if tool.path.startswith("/") else f"/{tool.path}"
 

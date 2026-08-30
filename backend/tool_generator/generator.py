@@ -115,6 +115,17 @@ class ConnectorGenerator:
         if self.gemini_service.is_available():
             enriched_summaries = await self.gemini_service.generate_tool_descriptions(summaries)
 
+        # Resolve effective base_url against source_url if relative
+        eff_base_url = spec.base_url
+        if spec.source_url and spec.source_url.startswith("http"):
+            if not eff_base_url:
+                from urllib.parse import urlparse
+                parsed_src = urlparse(spec.source_url)
+                eff_base_url = f"{parsed_src.scheme}://{parsed_src.netloc}"
+            elif not eff_base_url.startswith("http://") and not eff_base_url.startswith("https://"):
+                from urllib.parse import urljoin
+                eff_base_url = urljoin(spec.source_url, eff_base_url)
+
         # Build validated ToolDefinition for every endpoint in the NormalizedAPISpec
         for idx, ep in enumerate(spec.endpoints):
             enriched = enriched_summaries[idx] if idx < len(enriched_summaries) else {}
@@ -161,7 +172,7 @@ class ConnectorGenerator:
                 description=description,
                 method=ep.method.upper(),
                 path=ep.path,
-                base_url=spec.base_url,
+                base_url=eff_base_url,
                 parameters=tool_params,
                 request_body_schema=req_body_schema,
                 expected_response_schema=resp_schema,

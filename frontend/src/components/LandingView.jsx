@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export default function LandingView({ onAnalyze, onTriggerError }) {
-  const [url, setUrl] = useState('https://api.example.com/openapi.json');
+  const [url, setUrl] = useState('https://petstore3.swagger.io/api/v3/openapi.json');
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
@@ -84,7 +84,7 @@ export default function LandingView({ onAnalyze, onTriggerError }) {
               </div>
               <button
                 type="button"
-                onClick={() => handleSelectExample('https://api.example.com/openapi.json')}
+                onClick={() => handleSelectExample('https://petstore3.swagger.io/api/v3/openapi.json')}
                 className="font-mono text-[12px] text-primary/80 hover:text-primary transition-colors flex items-center gap-1"
               >
                 Try an example <span className="material-symbols-outlined text-[14px]">arrow_downward</span>

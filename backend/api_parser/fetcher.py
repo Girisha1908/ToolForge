@@ -137,27 +137,17 @@ class DocFetcher:
 
         # Fetch over HTTP/HTTPS safely
         try:
-            parsed = urlparse(url_or_raw)
-            # Reconstruct target URL using resolved IP to avoid DNS-rebinding, passing Host header
-            port_suffix = f":{parsed.port}" if parsed.port else ""
-            target_url = f"{parsed.scheme}://{resolved_ip}{port_suffix}{parsed.path}"
-            if parsed.query:
-                target_url += f"?{parsed.query}"
-
             headers = {
-                "Host": hostname,
                 "User-Agent": "ToolForge-DocParser/1.0 (API Specification Parser)",
                 "Accept": "application/json, application/x-yaml, text/yaml, text/html, text/plain, */*"
             }
 
             async with httpx.AsyncClient(
                 follow_redirects=False,  # Handle redirects explicitly to re-check target IPs against SSRF
-                timeout=timeout,
-                verify=True if parsed.scheme == "https" else False
+                timeout=timeout
             ) as client:
                 
-                curr_url = url_or_raw
-                curr_target = target_url
+                curr_target = url_or_raw
                 curr_headers = headers
                 redirects = 0
 
@@ -171,16 +161,12 @@ class DocFetcher:
                         
                         # Handle relative vs absolute redirect URLs
                         if not redirect_location.startswith("http://") and not redirect_location.startswith("https://"):
-                            redirect_location = f"{parsed.scheme}://{hostname}{redirect_location}"
+                            parsed = urlparse(curr_target)
+                            redirect_location = f"{parsed.scheme}://{parsed.netloc}{redirect_location}"
 
                         # Validate SSRF on redirect URL
                         res_ip, res_host = self.validate_and_resolve_url(redirect_location)
-                        p_red = urlparse(redirect_location)
-                        p_suffix = f":{p_red.port}" if p_red.port else ""
-                        curr_target = f"{p_red.scheme}://{res_ip}{p_suffix}{p_red.path}"
-                        if p_red.query:
-                            curr_target += f"?{p_red.query}"
-                        curr_headers = {**headers, "Host": res_host}
+                        curr_target = redirect_location
                         redirects += 1
                         continue
 
