@@ -218,18 +218,18 @@ INSTRUCTIONS:
 
             lines = []
             if title:
-                lines.append(f"- **Title:** {title}")
+                lines.append(f"• **Title:** {title}")
             if price is not None:
-                lines.append(f"- **Price:** ${price}")
+                lines.append(f"• **Price:** ${price}")
             if category:
-                lines.append(f"- **Category:** {category}")
+                lines.append(f"• **Category:** {category}")
             if rating and isinstance(rating, dict):
-                lines.append(f"- **Rating:** {rating.get('rate')} ({rating.get('count')} reviews)")
+                lines.append(f"• **Rating:** {rating.get('rate')} ⭐ ({rating.get('count')} reviews)")
             if description:
-                lines.append(f"- **Description:** {description}")
+                lines.append(f"• **Description:** {description}")
 
             if lines:
-                return f"### Details for '{tool_name}':\n\n" + "\n".join(lines)
+                return f"**Product Details ({tool_name}):**\n\n" + "\n\n".join(lines)
 
         data_str = json.dumps(data_obj) if isinstance(data_obj, (dict, list)) else str(data_obj)
         user_lower = user_msg.lower()

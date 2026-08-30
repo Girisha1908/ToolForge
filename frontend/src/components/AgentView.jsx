@@ -79,7 +79,7 @@ export default function AgentView({ activeTools, onAgentResponse }) {
           messages.map((msg) => (
             <div key={msg.id} className="flex flex-col gap-3">
               {msg.sender === 'user' ? (
-                <div className="self-end max-w-[80%] bg-surface-container-high border border-outline-variant/30 px-4 py-2.5 rounded-xl text-sm text-on-surface font-sans shadow-sm">
+                <div className="self-end max-w-[80%] bg-surface-container-high border border-outline-variant/30 px-4 py-2.5 rounded-xl text-sm text-on-surface font-sans shadow-sm whitespace-pre-wrap">
                   {msg.text}
                 </div>
               ) : (
@@ -123,8 +123,8 @@ export default function AgentView({ activeTools, onAgentResponse }) {
                   ))}
 
                   {/* Final Answer */}
-                  <div className="bg-primary/5 p-3.5 rounded-lg border border-primary/20 text-sm text-on-surface leading-relaxed">
-                    <span className="font-mono text-[10px] text-primary font-bold uppercase tracking-wider block mb-1">
+                  <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 text-sm text-on-surface leading-relaxed whitespace-pre-wrap">
+                    <span className="font-mono text-[10px] text-primary font-bold uppercase tracking-wider block mb-2">
                       FINAL ANSWER
                     </span>
                     {msg.finalAnswer}
@@ -155,7 +155,7 @@ export default function AgentView({ activeTools, onAgentResponse }) {
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Enter a prompt for the agent (e.g. Find user 42)..."
+          placeholder="Enter a prompt for the agent (e.g. Get details of product 5)..."
           className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl pl-4 pr-12 py-3 font-sans text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors shadow-inner"
         />
         <button
