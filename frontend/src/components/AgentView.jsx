@@ -5,22 +5,8 @@ export default function AgentView({ onUpdateTimeline }) {
   const [inputMessage, setInputMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // Default pre-populated conversation matching the Petstore / User demo
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      sender: 'user',
-      text: 'Find user 42.'
-    },
-    {
-      id: '2',
-      sender: 'agent',
-      action: 'Using get_user',
-      args: { id: 42 },
-      status: '200 OK',
-      resultText: 'User 42 is Rahul. Email: rahul@example.com.'
-    }
-  ]);
+  // Clean initial state for real requests
+  const [messages, setMessages] = useState([]);
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();

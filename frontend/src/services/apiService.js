@@ -4,21 +4,26 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 
 export async function parseApi(url) {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/parse-doc`, {
+    const res = await fetch(`${API_BASE_URL}/api/generate-tools`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     });
-    if (!res.ok) throw new Error('API parse error');
-    return await res.json();
-  } catch (err) {
-    console.warn('Backend parse-doc endpoint unreached, returning fallback spec:', err);
+    if (!res.ok) throw new Error('API parse and tool generation error');
+    const connector = await res.json();
     return {
-      api_name: 'User Management',
-      version: '1.0.0',
-      description: 'User management endpoints',
-      endpoints: [
+      apiName: connector.api_name || 'User Management',
+      authType: connector.auth_type || 'Bearer Token',
+      tools: connector.tools || []
+    };
+  } catch (err) {
+    console.warn('Backend generate-tools endpoint unreached, returning fallback spec:', err);
+    return {
+      apiName: 'User Management',
+      authType: 'Bearer Token',
+      tools: [
         {
+          id: 'get_user',
           name: 'get_user',
           method: 'GET',
           path: '/api/v1/users/{id}',
@@ -26,11 +31,23 @@ export async function parseApi(url) {
           parameters: [{ name: 'id', required: true, type: 'integer', in_location: 'path', description: 'User ID' }]
         },
         {
+          id: 'list_users',
           name: 'list_users',
           method: 'GET',
           path: '/api/v1/users',
           description: 'Get a paginated list of all users in the system.',
           parameters: [{ name: 'limit', required: false, type: 'integer', in_location: 'query', description: 'Limit' }]
+        },
+        {
+          id: 'create_user',
+          name: 'create_user',
+          method: 'POST',
+          path: '/api/v1/users',
+          description: 'Provision a new user account with specified roles and permissions.',
+          parameters: [
+            { name: 'name', required: true, type: 'string', in_location: 'body', description: 'User Name' },
+            { name: 'email', required: true, type: 'string', in_location: 'body', description: 'User Email' }
+          ]
         }
       ]
     };

@@ -41,17 +41,29 @@ def status():
 async def parse_documentation(request: ParseDocRequest):
     """
     Ingests and parses API documentation from a URL or raw content string.
-    Returns a normalized structured API specification.
+    Returns a normalized structured API specification and automatically registers generated tools.
     """
     if not request.url or not request.url.strip():
         raise HTTPException(status_code=400, detail="Documentation URL or content cannot be empty.")
 
     try:
         spec = await parser_instance.parse_doc(request.url)
+        # Automatically generate and register tools in default_registry
+        connector = await generator_instance.generate_async(spec)
+        default_registry.register_tools(connector.tools)
+        
+        tool_names = [t.name for t in connector.tools]
+        logger.info(f"[DEBUG] parse-doc registered {len(connector.tools)} tools in registry: {tool_names}")
+        print(f"[DEBUG] parse-doc registered {len(connector.tools)} tools in registry: {tool_names}")
+        
         return spec
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to process documentation: {str(exc)}")
 
+
+import logging
+
+logger = logging.getLogger("ToolForge.API")
 
 @router.post("/generate-tools", response_model=GeneratedConnector)
 async def generate_tools(request: GenerateToolsRequest):
@@ -67,6 +79,12 @@ async def generate_tools(request: GenerateToolsRequest):
     try:
         connector = await generator_instance.generate_async(spec)
         default_registry.register_tools(connector.tools)
+        
+        # Temporary safe debug logging
+        tool_names = [t.name for t in connector.tools]
+        logger.info(f"[DEBUG] Generated and registered {len(connector.tools)} tools: {tool_names}")
+        print(f"[DEBUG] Generated and registered {len(connector.tools)} tools: {tool_names}")
+        
         return connector
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate tools from API specification: {str(exc)}")
@@ -122,5 +140,11 @@ async def agent_chat(request: AgentChatRequest):
     Agent chat endpoint that takes user prompt, runs the AgentEngine against registered tools.
     """
     tools = default_registry.list_tools()
+    
+    # Temporary safe debug logging
+    tool_names = [t.name for t in tools]
+    logger.info(f"[DEBUG] agent_chat called with prompt: '{request.message}'. Tools available in registry ({len(tools)}): {tool_names}")
+    print(f"[DEBUG] agent_chat called with prompt: '{request.message}'. Tools available in registry ({len(tools)}): {tool_names}")
+    
     result = await agent_instance.run(request.message, tools)
     return result

@@ -241,6 +241,25 @@ User Request: "{user_prompt}"
                     "message": exc.message
                 }
             }
+        except Exception as exc:
+            trace.append("execution_failed")
+            return {
+                "success": False,
+                "message": f"Execution error: {str(exc)}",
+                "tool": tool_def.name,
+                "arguments": args,
+                "status_code": 500,
+                "latency_ms": 0,
+                "trace": trace,
+                "action": "Execution Error",
+                "args": args,
+                "status": "HTTP 500",
+                "resultText": str(exc),
+                "error": {
+                    "code": "TOOL_EXECUTION_FAILED",
+                    "message": str(exc)
+                }
+            }
 
         # Step 3: Natural language response synthesis (with deterministic fallback)
         summary_text = ""
