@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ToolForge - Turn APIs into tools for AI agents</title>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <!-- Material Symbols Outlined -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <!-- Tailwind CDN with ToolForge Design Tokens -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              surface: "#10131a",
+              "surface-dim": "#10131a",
+              "surface-bright": "#363940",
+              "surface-container-lowest": "#0b0e14",
+              "surface-container-low": "#191c22",
+              "surface-container": "#1d2026",
+              "surface-container-high": "#272a31",
+              "surface-container-highest": "#32353c",
+              "on-surface": "#e1e2eb",
+              "on-surface-variant": "#c2c6d6",
+              "inverse-surface": "#e1e2eb",
+              "inverse-on-surface": "#2e3037",
+              outline: "#8c909f",
+              "outline-variant": "#424754",
+              "surface-tint": "#adc6ff",
+              primary: "#adc6ff",
+              "on-primary": "#002e6a",
+              "primary-container": "#4d8eff",
+              "on-primary-container": "#00285d",
+              "inverse-primary": "#005ac2",
+              secondary: "#4edea3",
+              "on-secondary": "#003824",
+              "secondary-container": "#00a572",
+              "on-secondary-container": "#00311f",
+              tertiary: "#ffb95f",
+              "on-tertiary": "#472a00",
+              "tertiary-container": "#ca8100",
+              "on-tertiary-container": "#3e2400",
+              error: "#ffb4ab",
+              "on-error": "#690005",
+              "error-container": "#93000a",
+              "on-error-container": "#ffdad6",
+              background: "#10131a",
+              "on-background": "#e1e2eb",
+              "surface-variant": "#32353c"
+            },
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+              "headline-xl": ["Inter", "sans-serif"],
+              "headline-lg": ["Inter", "sans-serif"],
+              "headline-md": ["Inter", "sans-serif"],
+              "body-lg": ["Inter", "sans-serif"],
+              "body-md": ["Inter", "sans-serif"],
+              "code-md": ["JetBrains Mono", "monospace"],
+              "label-sm": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px"
+            },
+            spacing: {
+              "unit-1": "0.25rem",
+              "unit-2": "0.5rem",
+              "unit-3": "0.75rem",
+              "unit-4": "1rem",
+              "unit-6": "1.5rem",
+              "unit-8": "2rem",
+              "unit-12": "3rem",
+              "container-max": "1440px"
+            }
+          }
+        }
+      };
+    </script>
+    <style>
+      body {
+        margin: 0;
+        background-color: #10131a;
+        color: #e1e2eb;
+        font-family: 'Inter', sans-serif;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #10131a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #272a31;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #424754;
+      }
+    </style>
+  </head>
+  <body class="bg-surface font-sans text-on-surface min-h-screen">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
