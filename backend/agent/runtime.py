@@ -132,17 +132,45 @@ INSTRUCTIONS:
         executed_tools = {item.get("tool_name") for item in conversation_history if item.get("role") == "tool_result"}
 
         if tools and not executed_tools:
-            matched_tool = tools[0]
             user_lower = user_msg.lower()
-            for t in tools:
-                if t.name.lower() in user_lower or any(word in t.name.lower() for word in user_lower.split()):
-                    matched_tool = t
-                    break
+            nums = re.findall(r'\b\d+\b', user_msg)
+
+            matched_tool = None
+
+            # 1. If prompt has numbers/IDs (e.g. "product 5"), prefer tools with path parameters (e.g. /products/{id})
+            if nums:
+                for t in tools:
+                    if "{" in t.path or ":" in t.path or any(p.in_location == "path" for p in t.parameters):
+                        matched_tool = t
+                        break
+
+            # 2. Search by keyword matching in tool name or path
+            if not matched_tool:
+                for t in tools:
+                    if t.name.lower() in user_lower or any(word in t.name.lower() for word in user_lower.split() if len(word) > 2):
+                        matched_tool = t
+                        break
+
+            # 3. Default to first tool
+            if not matched_tool:
+                matched_tool = tools[0]
+
+            # Extract arguments for path/query parameters
+            arguments = {}
+            path_params = re.findall(r'\{([a-zA-Z0-9_]+)\}|:([a-zA-Z0-9_]+)', matched_tool.path)
+            if not path_params and matched_tool.parameters:
+                path_params = [(p.name, p.name) for p in matched_tool.parameters if p.in_location == "path"]
+
+            if path_params and nums:
+                for p_tuple in path_params:
+                    p_name = p_tuple[0] if isinstance(p_tuple, tuple) else p_tuple
+                    val = nums[0]
+                    arguments[p_name] = int(val) if val.isdigit() else val
 
             return {
                 "type": "tool_call",
                 "tool_name": matched_tool.name,
-                "arguments": {}
+                "arguments": arguments
             }
 
         tool_results = [item for item in conversation_history if item.get("role") == "tool_result"]
@@ -168,22 +196,52 @@ INSTRUCTIONS:
         if not raw_result:
             return f"Tool '{tool_name}' executed successfully, but returned no data."
 
-        data_str = ""
+        data_obj = raw_result
         if isinstance(raw_result, dict) and "_truncated_text" in raw_result:
-            data_str = raw_result["_truncated_text"]
-        elif isinstance(raw_result, (dict, list)):
-            data_str = json.dumps(raw_result)
-        else:
-            data_str = str(raw_result)
+            try:
+                data_obj = json.loads(raw_result["_truncated_text"])
+            except Exception:
+                data_obj = raw_result["_truncated_text"]
+        elif isinstance(raw_result, str):
+            try:
+                data_obj = json.loads(raw_result)
+            except Exception:
+                data_obj = raw_result
 
+        # Handle Single Object Response (e.g. GET /products/5)
+        if isinstance(data_obj, dict) and not ("_truncated_text" in data_obj and len(data_obj) == 1):
+            title = data_obj.get("title") or data_obj.get("name") or data_obj.get("id")
+            price = data_obj.get("price")
+            category = data_obj.get("category")
+            description = data_obj.get("description")
+            rating = data_obj.get("rating")
+
+            lines = []
+            if title:
+                lines.append(f"- **Title:** {title}")
+            if price is not None:
+                lines.append(f"- **Price:** ${price}")
+            if category:
+                lines.append(f"- **Category:** {category}")
+            if rating and isinstance(rating, dict):
+                lines.append(f"- **Rating:** {rating.get('rate')} ({rating.get('count')} reviews)")
+            if description:
+                lines.append(f"- **Description:** {description}")
+
+            if lines:
+                return f"### Details for '{tool_name}':\n\n" + "\n".join(lines)
+
+        data_str = json.dumps(data_obj) if isinstance(data_obj, (dict, list)) else str(data_obj)
         user_lower = user_msg.lower()
 
+        # Extract categories if user asked for categories
         if "category" in user_lower or "categories" in user_lower:
             categories = set(re.findall(r'category"\s*:\s*"([^"]+)"', data_str, re.IGNORECASE))
             if categories:
                 formatted_cats = "\n".join(f"- {c}" for c in sorted(categories))
                 return f"Here are the available product categories:\n\n{formatted_cats}"
 
+        # Extract item titles if user asked for items/products
         titles = re.findall(r'title"\s*:\s*"([^"]+)"', data_str, re.IGNORECASE)
         prices = re.findall(r'price"\s*:\s*([\d\.]+)', data_str)
 
