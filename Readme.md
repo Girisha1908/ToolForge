@@ -961,19 +961,44 @@ Add the required API credentials.
 
 ```bash
 cd backend
-# install dependencies
-# start the API server
+
+# Create & activate virtual environment
+# On macOS/Linux:
+python3 -m venv venv
+source venv/bin/activate
+
+# On Windows (PowerShell):
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment variables
+# Set GEMINI_API_KEY in environment or .env file
+
+# Start the FastAPI server
+uvicorn main:app --reload --port 8000
 ```
 
 ## Start the frontend
 
+In a separate terminal window:
+
 ```bash
 cd frontend
-# install dependencies
-# start the development server
+
+# Install dependencies
+npm install
+
+# Configure environment (optional, defaults to http://localhost:8000)
+# VITE_API_BASE_URL=http://localhost:8000
+
+# Start development server
+npm run dev
 ```
 
-Then open the application in your browser.
+Then open `http://localhost:5173` in your browser.
 
 ---
 

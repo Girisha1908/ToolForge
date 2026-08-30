@@ -13,12 +13,17 @@ from tool_generator.schemas import (
     ToolExecutionResult
 )
 from tool_executor.executor import ToolExecutor, ToolExecutionError
+from agent.runtime import AgentRuntime
+from agent.schemas import AgentResponse, AgentRunRequest
 
 router = APIRouter()
 
 parser_instance = APIParser()
 generator_instance = ConnectorGenerator()
 executor_instance = ToolExecutor()
+agent_runtime_instance = AgentRuntime()
+
+ERROR_SPEC_TITLES = {"Inaccessible Documentation", "Invalid Documentation Source", "Malformed Documentation"}
 
 
 class ParseDocRequest(BaseModel):
@@ -46,7 +51,11 @@ async def parse_documentation(request: ParseDocRequest):
 
     try:
         spec = await parser_instance.parse_doc(request.url)
+        if spec.api_name in ERROR_SPEC_TITLES:
+            raise HTTPException(status_code=400, detail=spec.description or "Failed to fetch or parse documentation.")
         return spec
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to process documentation: {str(exc)}")
 
@@ -62,10 +71,21 @@ async def generate_tools(request: GenerateToolsRequest):
             raise HTTPException(status_code=400, detail="Must provide either 'spec' object or 'url' string.")
         spec = await parser_instance.parse_doc(request.url)
 
+    if spec.api_name in ERROR_SPEC_TITLES:
+        raise HTTPException(status_code=400, detail=spec.description or "Failed to fetch or parse documentation.")
+
     try:
         connector = await generator_instance.generate_async(spec)
+        if not connector.tools:
+            raise HTTPException(
+                status_code=400,
+                detail="No tools could be generated from the provided URL. Please enter an API documentation URL (OpenAPI, Swagger, Postman, or HTML documentation) rather than a direct API endpoint."
+            )
+        default_registry.clear()
         default_registry.register_tools(connector.tools)
         return connector
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate tools from API specification: {str(exc)}")
 
@@ -108,3 +128,23 @@ async def execute_tool(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Tool execution failed: {str(exc)}")
+
+
+@router.post("/agent/run", response_model=AgentResponse)
+async def run_agent(request: AgentRunRequest):
+    """
+    Runs the agent runtime with a user prompt and tool definitions.
+    Dynamically executes requested tools and returns a structured AgentResponse.
+    """
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="User message cannot be empty.")
+
+    try:
+        response = await agent_runtime_instance.run_async(
+            user_message=request.message,
+            tools=request.tools,
+            max_iterations=request.max_iterations
+        )
+        return response
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Agent execution error: {str(exc)}")

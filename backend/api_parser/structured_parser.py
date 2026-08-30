@@ -133,6 +133,14 @@ class StructuredSpecParser:
             base_path = data.get("basePath", "")
             base_url = f"{schemes[0]}://{data['host']}{base_path}"
 
+        if base_url and source_url and not (base_url.startswith("http://") or base_url.startswith("https://")):
+            from urllib.parse import urljoin
+            base_url = urljoin(source_url, base_url)
+        elif not base_url and source_url:
+            from urllib.parse import urlparse
+            p = urlparse(source_url)
+            base_url = f"{p.scheme}://{p.netloc}"
+
         components = data.get("components", {})
         definitions = data.get("definitions", {})
 
@@ -395,16 +403,13 @@ class StructuredSpecParser:
         if isinstance(req, dict):
             method = req.get("method", "GET").upper()
             url_info = req.get("url", {})
-            if isinstance(url_info, dict):
-                raw_path = url_info.get("raw", "/")
-                if "?" in raw_path:
-                    raw_path = raw_path.split("?")[0]
-                if "://" in raw_path:
-                    path = "/" + "/".join(raw_path.split("://")[1].split("/")[1:])
-                else:
-                    path = raw_path
-            elif isinstance(url_info, str):
-                path = url_info
+            raw_url = url_info.get("raw", "/") if isinstance(url_info, dict) else str(url_info)
+            if "?" in raw_url:
+                raw_url = raw_url.split("?")[0]
+            if "://" in raw_url:
+                path = "/" + "/".join(raw_url.split("://")[1].split("/")[1:])
+            else:
+                path = raw_url
 
         parameters: List[ParameterSchema] = []
         if isinstance(req, dict) and isinstance(req.get("url"), dict):

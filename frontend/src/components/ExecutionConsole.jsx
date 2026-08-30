@@ -1,24 +1,60 @@
 import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/api';
 
-export default function ExecutionConsole({ selectedTool, onExecute }) {
-  const [argValues, setArgValues] = useState({ id: '42' });
+function generateSampleJson(schema) {
+  if (!schema || typeof schema !== 'object') return '';
+  const props = schema.properties || {};
+  if (Object.keys(props).length === 0) return '';
+
+  const obj = {};
+  for (const [key, prop] of Object.entries(props)) {
+    if (prop.example !== undefined) {
+      obj[key] = prop.example;
+    } else if (prop.type === 'integer' || prop.type === 'number') {
+      obj[key] = 1;
+    } else if (prop.type === 'boolean') {
+      obj[key] = true;
+    } else if (prop.type === 'array') {
+      obj[key] = prop.items?.example ? [prop.items.example] : ["sample_item"];
+    } else if (prop.type === 'object') {
+      obj[key] = {};
+    } else {
+      obj[key] = `sample_${key}`;
+    }
+  }
+  return JSON.stringify(obj, null, 2);
+}
+
+export default function ExecutionConsole({ selectedTool }) {
+  const [argValues, setArgValues] = useState({});
+  const [jsonBodyText, setJsonBodyText] = useState('');
   const [executionState, setExecutionState] = useState('idle'); // idle | loading | success | error
-  const [responseResult, setResponseResult] = useState(null);
+  const [executionResult, setExecutionResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     if (selectedTool) {
-      // Set default argument values based on selected tool
       const defaults = {};
-      if (selectedTool.params) {
-        selectedTool.params.forEach(p => {
-          defaults[p.name] = p.name === 'id' ? '42' : 'sample_value';
-        });
-      } else {
-        defaults['id'] = '42';
-      }
+      const params = selectedTool.parameters || selectedTool.params || [];
+      params.forEach(p => {
+        defaults[p.name] = p.default !== undefined && p.default !== null ? String(p.default) : '';
+      });
       setArgValues(defaults);
+
+      // Generate initial JSON body template if tool has request_body_schema
+      const bodySchema = selectedTool.request_body_schema || selectedTool.request_body;
+      const initialJson = generateSampleJson(bodySchema);
+      setJsonBodyText(initialJson);
+
       setExecutionState('idle');
-      setResponseResult(null);
+      setExecutionResult(null);
+      setErrorMsg(null);
+    } else {
+      setArgValues({});
+      setJsonBodyText('');
+      setExecutionState('idle');
+      setExecutionResult(null);
+      setErrorMsg(null);
     }
   }, [selectedTool]);
 
@@ -27,50 +63,55 @@ export default function ExecutionConsole({ selectedTool, onExecute }) {
   };
 
   const handleRun = async () => {
-    setExecutionState('loading');
-    
-    // Simulate real backend API round-trip execution
-    setTimeout(() => {
-      const toolName = selectedTool ? selectedTool.name : 'get_user';
-      const idVal = argValues['id'] || '42';
-      
-      let resData = {};
-      if (toolName === 'get_user') {
-        resData = {
-          id: Number(idVal) || 42,
-          name: "Rahul",
-          email: "rahul@example.com",
-          role: "Developer",
-          status: "active",
-          created_at: "2026-01-15T09:30:00Z"
-        };
-      } else if (toolName === 'list_users') {
-        resData = {
-          total: 2,
-          users: [
-            { id: 42, name: "Rahul", email: "rahul@example.com" },
-            { id: 43, name: "Sarah", email: "sarah@example.com" }
-          ]
-        };
-      } else {
-        resData = {
-          status: "created",
-          user: { id: 99, ...argValues }
-        };
-      }
+    if (!selectedTool) return;
 
-      setResponseResult(resData);
-      setExecutionState('success');
-      if (onExecute) {
-        onExecute({ tool: selectedTool, args: argValues, result: resData });
+    setExecutionState('loading');
+    setErrorMsg(null);
+    setExecutionResult(null);
+
+    const toolId = selectedTool.id || selectedTool.name;
+    const payloadArgs = { ...argValues };
+
+    if (jsonBodyText && jsonBodyText.trim()) {
+      try {
+        payloadArgs._raw_body = JSON.parse(jsonBodyText.trim());
+      } catch (err) {
+        setExecutionState('error');
+        setErrorMsg('Invalid JSON format in Request Body text area.');
+        return;
       }
-    }, 600);
+    }
+
+    try {
+      const result = await apiService.executeTool(toolId, payloadArgs);
+      setExecutionResult(result);
+      if (result.success) {
+        setExecutionState('success');
+      } else {
+        setExecutionState('error');
+        setErrorMsg(result.error || `HTTP ${result.status_code}: Request failed`);
+      }
+    } catch (err) {
+      setExecutionState('error');
+      setErrorMsg(err.message || 'Tool execution request failed.');
+    }
   };
 
-  const toolName = selectedTool ? selectedTool.name : 'get_user';
-  const toolParams = selectedTool?.params || [
-    { name: 'id', required: true, type: 'integer', description: 'Unique identifier of user' }
-  ];
+  if (!selectedTool) {
+    return (
+      <div className="bg-surface-container rounded-xl border border-outline-variant/30 flex flex-col h-full overflow-hidden shadow-xl p-unit-8 text-center items-center justify-center min-h-[350px]">
+        <span className="material-symbols-outlined text-outline text-4xl mb-2">terminal</span>
+        <h3 className="font-bold text-on-surface text-base mb-1">No tool selected</h3>
+        <p className="text-xs text-on-surface-variant max-w-xs">
+          Select a generated tool from the list to inspect parameters and test execution.
+        </p>
+      </div>
+    );
+  }
+
+  const toolName = selectedTool.name || 'unnamed_tool';
+  const toolParams = selectedTool.parameters || selectedTool.params || [];
+  const hasBodySchema = Boolean(selectedTool.request_body_schema || selectedTool.request_body) || ['POST', 'PUT', 'PATCH'].includes(selectedTool.method);
 
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/30 flex flex-col h-full overflow-hidden shadow-xl">
@@ -96,7 +137,7 @@ export default function ExecutionConsole({ selectedTool, onExecute }) {
           <div className="font-mono text-lg font-bold text-primary flex items-center gap-2">
             {toolName}
             <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-              {selectedTool?.method || 'GET'}
+              {selectedTool.method || 'GET'}
             </span>
           </div>
         </div>
@@ -107,29 +148,55 @@ export default function ExecutionConsole({ selectedTool, onExecute }) {
             ARGUMENTS
           </span>
 
-          {toolParams.map((param) => (
-            <div key={param.name} className="flex flex-col gap-1.5">
+          {toolParams.length === 0 && !hasBodySchema ? (
+            <p className="text-xs text-on-surface-variant italic font-mono">No parameters required for this endpoint.</p>
+          ) : (
+            toolParams.map((param) => (
+              <div key={param.name} className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
+                    <span>{param.name}</span>
+                    {param.required && (
+                      <span className="text-[10px] text-tertiary bg-tertiary/10 px-1.5 py-0.2 rounded font-mono uppercase">
+                        REQUIRED
+                      </span>
+                    )}
+                  </label>
+                  <span className="font-mono text-[11px] text-outline">{param.type || 'string'}</span>
+                </div>
+
+                <input
+                  type="text"
+                  value={argValues[param.name] || ''}
+                  onChange={(e) => handleArgChange(param.name, e.target.value)}
+                  placeholder={param.description || `Enter ${param.name}`}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-3 py-2 font-mono text-sm text-on-surface focus:outline-none focus:border-primary transition-colors"
+                />
+              </div>
+            ))
+          )}
+
+          {/* Request Body JSON Text Area for POST / PUT / PATCH endpoints */}
+          {hasBodySchema && (
+            <div className="flex flex-col gap-1.5 pt-2 border-t border-outline-variant/20">
               <div className="flex items-center justify-between">
                 <label className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
-                  <span>{param.name}</span>
-                  {param.required && (
-                    <span className="text-[10px] text-tertiary bg-tertiary/10 px-1.5 py-0.2 rounded font-mono uppercase">
-                      REQUIRED
-                    </span>
-                  )}
+                  <span>Request Body (JSON)</span>
+                  <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-mono uppercase">
+                    APPLICATION/JSON
+                  </span>
                 </label>
-                <span className="font-mono text-[11px] text-outline">{param.type}</span>
               </div>
 
-              <input
-                type="text"
-                value={argValues[param.name] || ''}
-                onChange={(e) => handleArgChange(param.name, e.target.value)}
-                placeholder={`Enter ${param.name}`}
-                className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-3 py-2 font-mono text-sm text-on-surface focus:outline-none focus:border-primary transition-colors"
+              <textarea
+                rows={6}
+                value={jsonBodyText}
+                onChange={(e) => setJsonBodyText(e.target.value)}
+                placeholder='{\n  "key": "value"\n}'
+                className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-3 font-mono text-xs text-on-surface focus:outline-none focus:border-primary transition-colors leading-relaxed"
               />
             </div>
-          ))}
+          )}
 
           <button
             onClick={handleRun}
@@ -150,30 +217,43 @@ export default function ExecutionConsole({ selectedTool, onExecute }) {
           </button>
         </div>
 
+        {/* Error Notification */}
+        {executionState === 'error' && errorMsg && (
+          <div className="p-3 rounded-lg bg-error/10 border border-error/30 text-error font-mono text-xs">
+            {errorMsg}
+          </div>
+        )}
+
         {/* Response Section */}
-        {executionState === 'success' && responseResult && (
+        {executionResult && (
           <div className="mt-2 space-y-3 pt-4 border-t border-outline-variant/30">
-            {/* Status Pill */}
             <div className="flex items-center justify-between">
-              <span className="px-2.5 py-1 rounded bg-secondary/10 border border-secondary/30 font-mono text-xs font-bold text-secondary flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                200 OK
+              <span className={`px-2.5 py-1 rounded font-mono text-xs font-bold border flex items-center gap-1.5 ${
+                executionResult.success
+                  ? 'bg-secondary/10 border-secondary/30 text-secondary'
+                  : 'bg-error/10 border-error/30 text-error'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${executionResult.success ? 'bg-secondary' : 'bg-error'}`}></span>
+                HTTP {executionResult.status_code}
               </span>
-              <span className="font-mono text-[10px] text-outline">Latency: 124ms</span>
+              <span className="font-mono text-[10px] text-outline">
+                Latency: {executionResult.latency_ms}ms
+              </span>
             </div>
 
             {/* Request Display */}
-            <div>
-              <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider block mb-1">
-                REQUEST
-              </span>
-              <div className="bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/20 font-mono text-xs text-on-surface-variant space-y-1">
-                <div className="text-primary">
-                  {selectedTool?.method || 'GET'} {selectedTool?.path?.replace('{id}', argValues['id'] || '42') || `/api/v1/users/${argValues['id'] || '42'}`}
+            {executionResult.request && (
+              <div>
+                <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider block mb-1">
+                  REQUEST
+                </span>
+                <div className="bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/20 font-mono text-xs text-on-surface-variant space-y-1">
+                  <div className="text-primary">
+                    {executionResult.request.method} {executionResult.request.url || executionResult.request.path}
+                  </div>
                 </div>
-                <div className="text-outline text-[11px]">Authorization: Bearer ***</div>
               </div>
-            </div>
+            )}
 
             {/* Response Formatted JSON */}
             <div>
@@ -181,10 +261,14 @@ export default function ExecutionConsole({ selectedTool, onExecute }) {
                 <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider">
                   RESPONSE
                 </span>
-                <span className="font-mono text-[10px] text-outline">application/json</span>
+                <span className="font-mono text-[10px] text-outline">
+                  {typeof executionResult.response === 'object' ? 'application/json' : 'text/plain'}
+                </span>
               </div>
               <pre className="bg-surface-container-lowest p-3 rounded-lg border border-outline-variant/20 font-mono text-xs text-secondary/90 overflow-x-auto leading-relaxed">
-                {JSON.stringify(responseResult, null, 2)}
+                {typeof executionResult.response === 'object'
+                  ? JSON.stringify(executionResult.response, null, 2)
+                  : String(executionResult.response || executionResult.error || 'No body')}
               </pre>
             </div>
           </div>

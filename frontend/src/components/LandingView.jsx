@@ -1,22 +1,12 @@
 import React, { useState } from 'react';
 
-export default function LandingView({ onAnalyze, onTriggerError }) {
-  const [url, setUrl] = useState('https://api.example.com/openapi.json');
+export default function LandingView({ onAnalyze }) {
+  const [url, setUrl] = useState('');
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     if (!url.trim()) return;
-    
-    if (url.includes('error') || url.includes('invalid')) {
-      onTriggerError(url);
-    } else {
-      onAnalyze(url);
-    }
-  };
-
-  const handleSelectExample = (exampleUrl) => {
-    setUrl(exampleUrl);
-    onAnalyze(exampleUrl);
+    onAnalyze(url.trim());
   };
 
   return (
@@ -40,7 +30,7 @@ export default function LandingView({ onAnalyze, onTriggerError }) {
 
         {/* Description */}
         <p className="text-on-surface-variant max-w-2xl text-center text-base leading-relaxed mb-unit-12">
-          Paste an API documentation URL. ToolForge analyzes the API, generates agent-ready tools, and provisions secure execution environments for your AI.
+          Paste an API documentation URL. ToolForge analyzes the API, generates agent-ready tools, and provisions execution environments for your AI.
         </p>
 
         {/* Main Action Card */}
@@ -50,8 +40,8 @@ export default function LandingView({ onAnalyze, onTriggerError }) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-unit-4">
             <label className="font-mono text-xs text-on-surface-variant uppercase tracking-widest text-left flex items-center justify-between">
               <span>API Documentation URL</span>
-              <span className="text-[10px] text-outline flex items-center gap-1 opacity-80 transition-opacity">
-                <span className="material-symbols-outlined text-[14px]">bolt</span> Auto-detects OpenAPI/Swagger
+              <span className="text-[10px] text-outline flex items-center gap-1 opacity-80">
+                <span className="material-symbols-outlined text-[14px]">bolt</span> OpenAPI 3.0+, Swagger 2.0, Postman
               </span>
             </label>
 
@@ -71,107 +61,56 @@ export default function LandingView({ onAnalyze, onTriggerError }) {
 
               <button
                 type="submit"
-                className="h-14 px-unit-8 bg-primary text-on-primary font-mono text-xs uppercase tracking-wider font-bold rounded-lg hover:bg-primary-container transition-all hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-primary/20 whitespace-nowrap flex items-center justify-center gap-unit-2"
+                disabled={!url.trim()}
+                className="h-14 px-unit-8 bg-primary text-on-primary font-mono text-xs uppercase tracking-wider font-bold rounded-lg hover:bg-primary-container transition-all hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-primary/20 whitespace-nowrap flex items-center justify-center gap-unit-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 ANALYZE API
                 <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-between mt-unit-2 gap-2">
+            <div className="flex items-center justify-between mt-unit-2">
               <div className="text-[12px] font-mono text-on-surface-variant/70">
-                Supports: OpenAPI 3.0+, Swagger 2.0, Postman Collections
+                Supports public HTTP/HTTPS documentation endpoints
               </div>
-              <button
-                type="button"
-                onClick={() => handleSelectExample('https://api.example.com/openapi.json')}
-                className="font-mono text-[12px] text-primary/80 hover:text-primary transition-colors flex items-center gap-1"
-              >
-                Try an example <span className="material-symbols-outlined text-[14px]">arrow_downward</span>
-              </button>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Connectors / Examples Section */}
+      {/* Info Patterns Section */}
       <div className="w-full max-w-container-max mx-auto px-unit-8 py-unit-12 relative z-10 border-t border-outline-variant/10">
-        <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-unit-8 gap-unit-4">
-          <div>
-            <h2 className="text-xl font-bold text-on-surface flex items-center gap-unit-2">
-              <span className="material-symbols-outlined text-outline">developer_board</span>
-              Connect your first API
-            </h2>
-            <p className="text-sm text-on-surface-variant mt-unit-1">Select an architecture pattern to see ToolForge in action.</p>
-          </div>
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={() => onTriggerError('https://invalid.example.com/v1/bad.json')}
-              className="h-8 px-3 rounded bg-error/10 text-error border border-error/20 hover:bg-error/20 transition-colors flex items-center gap-1 font-mono text-[11px]"
-            >
-              <span className="material-symbols-outlined text-[14px]">bug_report</span> Test Error State
-            </button>
-          </div>
+        <div className="mb-unit-8">
+          <h2 className="text-xl font-bold text-on-surface flex items-center gap-unit-2">
+            <span className="material-symbols-outlined text-outline">developer_board</span>
+            Supported Input Formats
+          </h2>
+          <p className="text-sm text-on-surface-variant mt-unit-1">Provide any public API documentation URL to generate executable agent tools.</p>
         </div>
 
-        {/* Connector Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-unit-6">
-          {/* GitHub Card */}
-          <div 
-            onClick={() => handleSelectExample('https://api.github.com/openapi')}
-            className="group relative bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 hover:bg-surface-container transition-all duration-300 cursor-pointer overflow-hidden flex flex-col min-h-[200px]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="w-12 h-12 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-6 group-hover:border-primary/30 transition-colors shadow-sm">
-              <svg className="w-6 h-6 fill-on-surface-variant group-hover:fill-primary transition-colors" viewBox="0 0 24 24">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-              </svg>
+          <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 flex flex-col">
+            <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-4">
+              <span className="material-symbols-outlined text-primary text-xl">description</span>
             </div>
-            <h3 className="font-bold text-lg text-on-surface mb-unit-2 group-hover:text-primary transition-colors">GitHub</h3>
-            <p className="text-xs text-on-surface-variant line-clamp-2 mb-auto">Repository management, issue tracking, and PR automation tools.</p>
-            <div className="mt-unit-4 flex items-center justify-between text-xs text-outline">
-              <span className="font-mono text-[10px] uppercase tracking-wider">12 Tools Available</span>
-              <span className="material-symbols-outlined text-primary text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
-            </div>
+            <h3 className="font-bold text-base text-on-surface mb-1">OpenAPI / Swagger</h3>
+            <p className="text-xs text-on-surface-variant">Standard JSON or YAML specifications defining schemas, paths, and methods.</p>
           </div>
 
-          {/* Twilio Card */}
-          <div 
-            onClick={() => handleSelectExample('https://api.twilio.com/swagger')}
-            className="group relative bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 hover:bg-surface-container transition-all duration-300 cursor-pointer overflow-hidden flex flex-col min-h-[200px]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="w-12 h-12 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-6 group-hover:border-primary/30 transition-colors shadow-sm">
-              <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors text-2xl">
-                forum
-              </span>
+          <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 flex flex-col">
+            <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-4">
+              <span className="material-symbols-outlined text-secondary text-xl">view_module</span>
             </div>
-            <h3 className="font-bold text-lg text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Twilio</h3>
-            <p className="text-xs text-on-surface-variant line-clamp-2 mb-auto">Programmable messaging, voice, and communications APIs.</p>
-            <div className="mt-unit-4 flex items-center justify-between text-xs text-outline">
-              <span className="font-mono text-[10px] uppercase tracking-wider">8 Tools Available</span>
-              <span className="material-symbols-outlined text-primary text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
-            </div>
+            <h3 className="font-bold text-base text-on-surface mb-1">Postman Collections</h3>
+            <p className="text-xs text-on-surface-variant">Postman v2/v2.1 collection endpoints with query parameters and request bodies.</p>
           </div>
 
-          {/* Jira Card */}
-          <div 
-            onClick={() => handleSelectExample('https://jira.atlassian.com/openapi')}
-            className="group relative bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 hover:bg-surface-container transition-all duration-300 cursor-pointer overflow-hidden flex flex-col min-h-[200px]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="w-12 h-12 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-6 group-hover:border-primary/30 transition-colors shadow-sm">
-              <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors text-2xl">
-                task_alt
-              </span>
+          <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl p-unit-6 flex flex-col">
+            <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center border border-outline-variant/20 mb-unit-4">
+              <span className="material-symbols-outlined text-tertiary text-xl">article</span>
             </div>
-            <h3 className="font-bold text-lg text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Jira</h3>
-            <p className="text-xs text-on-surface-variant line-clamp-2 mb-auto">Issue tracking, sprint planning, and workflow automation endpoints.</p>
-            <div className="mt-unit-4 flex items-center justify-between text-xs text-outline">
-              <span className="font-mono text-[10px] uppercase tracking-wider">15 Tools Available</span>
-              <span className="material-symbols-outlined text-primary text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
-            </div>
+            <h3 className="font-bold text-base text-on-surface mb-1">HTML / Text Documentation</h3>
+            <p className="text-xs text-on-surface-variant">Structured or plain HTML documentation parsed through rule-based and LLM extraction.</p>
           </div>
         </div>
       </div>

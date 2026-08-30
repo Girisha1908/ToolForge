@@ -46,6 +46,21 @@ class TestDocFetcher(unittest.TestCase):
             DocFetcher.validate_and_resolve_url("http://169.254.169.254/latest/meta-data")
         self.assertIn("blocked for security reasons", str(ctx.exception))
 
+    @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+    def test_redirect_ssrf_protection_and_dns_pinning(self, mock_get):
+        # Mock initial GET to return a redirect to a private IP URL
+        mock_response = MagicMock()
+        mock_response.is_redirect = True
+        mock_response.status_code = 302
+        mock_response.headers = {"location": "http://10.0.0.1/secret.json"}
+        mock_get.return_value = mock_response
+
+        fetcher = DocFetcher()
+        with self.assertRaises(DocFetchError) as ctx:
+            asyncio.run(fetcher.fetch("https://example.com/spec.json"))
+
+        self.assertIn("blocked for security reasons", str(ctx.exception))
+
     def test_html_text_extraction(self):
         html = """
         <html>
