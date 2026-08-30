@@ -11,87 +11,79 @@ export default function Dashboard({ activeTab }) {
   // App State: IDLE | ANALYZING | GENERATED_TOOLS | AGENT | ERROR
   const [appState, setAppState] = useState('IDLE');
   const [apiUrl, setApiUrl] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [selectedTool, setSelectedTool] = useState(null);
-  const [tools, setTools] = useState([]);
   const [apiName, setApiName] = useState('');
-  const [authType, setAuthType] = useState('');
-
-  const [timelineSteps, setTimelineSteps] = useState([
-    { title: 'User Request Received', done: true },
-    { title: 'Agent Selected Tool: get_user', done: true },
-    { title: 'Arguments Validated', done: true },
-    { title: 'API Request Sent', done: true },
-    { title: 'Response Received', done: true },
-    { title: 'Result Returned to User', done: true }
-  ]);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [tools, setTools] = useState([]);
+  const [selectedTool, setSelectedTool] = useState(null);
+  const [timelineSteps, setTimelineSteps] = useState([]);
 
   const handleStartAnalysis = (url) => {
     setApiUrl(url);
     setAppState('ANALYZING');
   };
 
-  const handleTriggerError = (url, customMsg) => {
-    setApiUrl(url);
-    setErrorMsg(customMsg || `The API documentation at ${url} could not be parsed. Ensure the URL is public and follows OpenAPI 3.0+ specifications.`);
+  const handleAnalysisComplete = (connector) => {
+    const generatedTools = connector?.tools || [];
+    setTools(generatedTools);
+    setApiName(connector?.api_name || 'Parsed API');
+    setTimelineSteps([]); // Reset timeline steps from previous sessions
+    if (generatedTools.length > 0) {
+      setSelectedTool(generatedTools[0]);
+    } else {
+      setSelectedTool(null);
+    }
+    setAppState('GENERATED_TOOLS');
+  };
+
+  const handleAnalysisError = (msg) => {
+    setErrorMsg(msg);
     setAppState('ERROR');
   };
 
-  const handleAnalysisComplete = (data) => {
-    if (data) {
-      setTools(data.tools || []);
-      setApiName(data.apiName || '');
-      setAuthType(data.authType || '');
-      if (data.tools && data.tools.length > 0) {
-        setSelectedTool(data.tools[0]);
+  const handleAgentResponse = (agentResponse) => {
+    if (agentResponse && agentResponse.steps) {
+      const formattedSteps = agentResponse.steps.map((step) => {
+        const isSuccess = step.execution_result ? step.execution_result.success : !step.error;
+        return {
+          title: `Tool: ${step.tool_name} (${isSuccess ? 'Success' : 'Error'})`,
+          done: true,
+          success: isSuccess,
+          error: step.error
+        };
+      });
+
+      if (agentResponse.final_answer) {
+        formattedSteps.push({
+          title: 'Final Answer Generated',
+          done: true,
+          success: agentResponse.success
+        });
       }
+
+      setTimelineSteps(formattedSteps);
     }
-    setAppState('GENERATED_TOOLS');
   };
 
   const handleReset = () => {
     setAppState('IDLE');
     setApiUrl('');
+    setApiName('');
     setErrorMsg('');
     setTools([]);
     setSelectedTool(null);
-    setApiName('');
-    setAuthType('');
+    setTimelineSteps([]);
   };
-
-  // Render view depending on navigation tab & state
-  if (activeTab === 'connectors') {
-    return (
-      <div className="max-w-container-max mx-auto px-unit-8 py-24 text-center">
-        <h2 className="text-2xl font-bold text-on-surface mb-2">Connectors Directory</h2>
-        <p className="text-sm text-on-surface-variant mb-8">Manage active API integrations and webhook listeners.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-surface-container p-6 rounded-xl border border-outline-variant/30 text-left">
-            <h3 className="font-bold text-lg mb-1">Postgres DB_Main</h3>
-            <span className="text-xs font-mono text-secondary">STATUS: HEALTHY</span>
-          </div>
-          <div className="bg-surface-container p-6 rounded-xl border border-outline-variant/30 text-left">
-            <h3 className="font-bold text-lg mb-1">Stripe API_Prod</h3>
-            <span className="text-xs font-mono text-secondary">STATUS: HEALTHY</span>
-          </div>
-          <div className="bg-surface-container p-6 rounded-xl border border-outline-variant/30 text-left">
-            <h3 className="font-bold text-lg mb-1">Custom OpenAPI Endpoint</h3>
-            <span className="text-xs font-mono text-primary">STATUS: CONNECTED</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (activeTab === 'documentation') {
     return (
       <div className="max-w-container-max mx-auto px-unit-8 py-24">
         <h2 className="text-2xl font-bold text-on-surface mb-2">ToolForge Documentation</h2>
-        <p className="text-sm text-on-surface-variant mb-6">Learn how ToolForge automatically generates function calling schemas for LLM agent frameworks.</p>
+        <p className="text-sm text-on-surface-variant mb-6">Learn how ToolForge automatically generates executable agent tools from API documentation.</p>
         <div className="bg-surface-container p-6 rounded-xl border border-outline-variant/30 font-mono text-xs text-on-surface-variant space-y-4">
-          <p className="text-primary font-bold">// 1. Paste OpenAPI URL</p>
-          <p>// 2. ToolForge parses endpoints and parameter constraints</p>
-          <p>// 3. Tools are exported as JSON Schema compatible with OpenAI, LangChain & LlamaIndex</p>
+          <p className="text-primary font-bold">// 1. Provide API documentation URL (OpenAPI, Swagger, Postman, HTML)</p>
+          <p>// 2. ToolForge ingests endpoints, parameter schemas, and authentication</p>
+          <p>// 3. Generates validated tool definitions registered in ToolRegistry</p>
+          <p>// 4. Executes dynamic HTTP requests through secure executor & Agent Runtime</p>
         </div>
       </div>
     );
@@ -99,20 +91,19 @@ export default function Dashboard({ activeTab }) {
 
   return (
     <main className="w-full min-h-screen">
-      {/* IDLE state -> Landing Page */}
+      {/* IDLE state -> Landing View */}
       {appState === 'IDLE' && (
         <LandingView
           onAnalyze={handleStartAnalysis}
-          onTriggerError={handleTriggerError}
         />
       )}
 
-      {/* ANALYZING state -> Progress Checklist */}
+      {/* ANALYZING state -> Progress Analysis */}
       {appState === 'ANALYZING' && (
         <AnalysisView
           url={apiUrl}
           onComplete={handleAnalysisComplete}
-          onTriggerError={handleTriggerError}
+          onError={handleAnalysisError}
           onCancel={handleReset}
         />
       )}
@@ -123,19 +114,21 @@ export default function Dashboard({ activeTab }) {
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-outline-variant/30">
             <div>
               <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">
-                PROJECT: TOOLFORGE_DEMO
+                API WORKSPACE: {apiName.toUpperCase()}
               </span>
               <h1 className="text-2xl font-bold text-on-surface">API Tools Workspace</h1>
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setAppState('AGENT')}
-                className="px-4 py-2 bg-primary text-on-primary rounded-lg font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary-container transition-all"
-              >
-                <span className="material-symbols-outlined text-sm">smart_toy</span>
-                TRY AGENT MODE
-              </button>
+              {tools.length > 0 && (
+                <button
+                  onClick={() => setAppState('AGENT')}
+                  className="px-4 py-2 bg-primary text-on-primary rounded-lg font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary-container transition-all"
+                >
+                  <span className="material-symbols-outlined text-sm">smart_toy</span>
+                  TRY AGENT MODE
+                </button>
+              )}
               <button
                 onClick={handleReset}
                 className="px-3 py-2 bg-surface-container border border-outline-variant/30 text-on-surface-variant hover:text-on-surface rounded-lg font-mono text-xs uppercase"
@@ -157,20 +150,19 @@ export default function Dashboard({ activeTab }) {
             <div className="lg:col-span-5 min-h-[500px]">
               <ExecutionConsole
                 selectedTool={selectedTool}
-                onExecute={() => {}}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* AGENT state -> Two Column: Agent Console + Execution Timeline Flow */}
+      {/* AGENT state -> Two Column: Agent Console + Execution Timeline */}
       {appState === 'AGENT' && (
         <div className="max-w-container-max mx-auto px-unit-8 py-8 pt-20">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-outline-variant/30">
             <div>
               <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">
-                AGENT CONSOLE
+                AGENT CONSOLE: {apiName.toUpperCase()}
               </span>
               <h1 className="text-2xl font-bold text-on-surface">AI Agent Execution Environment</h1>
             </div>
@@ -194,7 +186,10 @@ export default function Dashboard({ activeTab }) {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-unit-6 min-h-[550px]">
             <div className="lg:col-span-7 h-full">
-              <AgentView onUpdateTimeline={setTimelineSteps} />
+              <AgentView
+                activeTools={tools}
+                onAgentResponse={handleAgentResponse}
+              />
             </div>
             <div className="lg:col-span-5 h-full">
               <ExecutionTimeline steps={timelineSteps} />
@@ -203,7 +198,7 @@ export default function Dashboard({ activeTab }) {
         </div>
       )}
 
-      {/* ERROR state -> Centered Error Card */}
+      {/* ERROR state -> Error View */}
       {appState === 'ERROR' && (
         <ErrorView
           errorMsg={errorMsg}

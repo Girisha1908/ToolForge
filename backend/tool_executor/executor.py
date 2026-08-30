@@ -1,9 +1,10 @@
 import time
 import httpx
 import re
+import json
 from typing import Dict, Any, Optional, Tuple
-from urllib.parse import urlparse
-from api_parser.fetcher import DocFetcher, DocFetchError
+from urllib.parse import urlparse, quote
+from api_parser.fetcher import DocFetcher, SSRFSafeAsyncHTTPTransport
 from tool_generator.schemas import ToolDefinition, ToolExecutionResult
 from tool_executor.authentication import AuthHandler
 
@@ -70,36 +71,25 @@ class ToolExecutor:
         self.auth_handler.apply_auth(headers, query_params, tool.authentication)
 
         # Step 3: Validate target URL against SSRF safety rules
-        try:
-            resolved_ip, hostname = DocFetcher.validate_and_resolve_url(target_url)
-        except DocFetchError as exc:
-            if "example.com" in target_url or "localhost" in target_url:
-                latency = round((time.time() - start_time) * 1000, 2)
-                arg_id = int(arguments.get("id") or arguments.get("petId") or 1)
-                return ToolExecutionResult(
-                    success=True,
-                    tool=tool.name,
-                    status_code=200,
-                    latency_ms=latency,
-                    request={
-                        "method": tool.method,
-                        "url": target_url,
-                        "path": tool.path,
-                        "query_params": query_params
-                    },
-                    response={
-                        "id": arg_id,
-                        "name": "Rahul" if arg_id in (1, 42) else f"User {arg_id}",
-                        "email": "rahul@example.com" if arg_id in (1, 42) else f"user{arg_id}@example.com",
-                        "role": "Developer",
-                        "status": "active"
-                    }
-                )
-            raise ToolExecutionError(message=f"DNS or network error connecting to target URL: {str(exc)}", status_code=502)
+        resolved_ip, hostname = DocFetcher.validate_and_resolve_url(target_url)
+        dns_map = {hostname: resolved_ip}
+
+        parsed = urlparse(target_url)
+        is_https = parsed.scheme == "https"
+
+        transport = SSRFSafeAsyncHTTPTransport(
+            dns_map=dns_map,
+            verify=True if is_https else False,
+            retries=2
+        )
 
         # Step 4: Execute HTTP request
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                transport=transport,
+                timeout=self.timeout,
+                follow_redirects=False
+            ) as client:
                 res = await client.request(
                     method=tool.method,
                     url=target_url,
@@ -118,6 +108,14 @@ class ToolExecutor:
 
                 success = res.status_code < 400
 
+                # Build error message with truncated response snippet for 4xx/5xx
+                error_msg = None
+                if not success:
+                    error_msg = f"HTTP {res.status_code}: {res.reason_phrase}"
+                    body_snippet = self._format_error_body_snippet(resp_data)
+                    if body_snippet:
+                        error_msg += f" - {body_snippet}"
+
                 return ToolExecutionResult(
                     success=success,
                     tool=tool.name,
@@ -130,7 +128,7 @@ class ToolExecutor:
                         "query_params": query_params
                     },
                     response=resp_data,
-                    error=None if success else f"HTTP {res.status_code}: {res.reason_phrase}"
+                    error=error_msg
                 )
 
         except httpx.TimeoutException:
@@ -171,27 +169,64 @@ class ToolExecutor:
             )
 
     def _build_path_url(self, tool: ToolDefinition, arguments: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-        """Substitutes path parameters and constructs full target URL."""
-        base_url = tool.base_url or "https://petstore3.swagger.io/api/v3"
-        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+        """Substitutes path parameters (safely URL-encoded) and constructs full target URL."""
+        base_url = (tool.base_url or "https://api.example.com").strip()
+        path = (tool.path or "/").strip()
+
+        # Ensure base_url has scheme
+        if not (base_url.startswith("http://") or base_url.startswith("https://")):
             if base_url.startswith("/"):
-                base_url = f"https://petstore3.swagger.io{base_url}"
+                base_url = f"https://api.example.com{base_url}"
             else:
-                base_url = f"https://petstore3.swagger.io/{base_url}"
-        base_url = base_url.rstrip("/")
-        path = tool.path if tool.path.startswith("/") else f"/{tool.path}"
+                base_url = f"https://{base_url}"
 
         remaining_args = dict(arguments)
 
-        # Substitute {param} or :param in path
+        # Substitute {param} or :param in path with urllib.parse.quote(val, safe="")
         path_params = re.findall(r'\{([a-zA-Z0-9_]+)\}|:([a-zA-Z0-9_]+)', path)
         for p_tuple in path_params:
             p_name = p_tuple[0] or p_tuple[1]
             if p_name in remaining_args:
-                val = str(remaining_args.pop(p_name))
-                path = path.replace(f"{{{p_name}}}", val).replace(f":{p_name}", val)
+                raw_val = str(remaining_args.pop(p_name))
+                encoded_val = quote(raw_val, safe="")
+                path = path.replace(f"{{{p_name}}}", encoded_val).replace(f":{p_name}", encoded_val)
             else:
                 raise ToolExecutionError(f"Path parameter '{p_name}' was not provided in arguments.")
 
-        full_url = f"{base_url}{path}"
+        # Construct final URL avoiding path duplication or double slashes
+        parsed_base = urlparse(base_url)
+        origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+        base_path = parsed_base.path.rstrip("/")
+        clean_path = path if path.startswith("/") else f"/{path}"
+
+        if base_path and (clean_path == base_path or clean_path.startswith(f"{base_path}/")):
+            full_url = f"{origin}{clean_path}"
+        else:
+            full_url = f"{base_url.rstrip('/')}/{clean_path.lstrip('/')}"
+
         return full_url, remaining_args
+
+    @staticmethod
+    def _format_error_body_snippet(resp_data: Any, max_len: int = 250) -> Optional[str]:
+        """Formats and truncates error response data into a sanitized snippet."""
+        if not resp_data:
+            return None
+
+        if isinstance(resp_data, dict):
+            # Extract common error fields if present
+            msg = resp_data.get("message") or resp_data.get("error") or resp_data.get("detail")
+            if msg:
+                snippet = str(msg)
+            else:
+                snippet = json.dumps(resp_data)
+        elif isinstance(resp_data, str):
+            snippet = resp_data.strip()
+        else:
+            snippet = str(resp_data)
+
+        # Sanitize single-line & truncate
+        snippet = re.sub(r'[\r\n\t]+', ' ', snippet)
+        if len(snippet) > max_len:
+            snippet = snippet[:max_len] + "..."
+
+        return snippet

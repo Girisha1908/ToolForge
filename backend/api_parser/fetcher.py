@@ -4,11 +4,13 @@ import socket
 import ipaddress
 from urllib.parse import urlparse
 from html.parser import HTMLParser
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, List
+
 
 class DocFetchError(Exception):
     """Custom exception raised when documentation fetching fails."""
     pass
+
 
 class HTMLTextExtractor(HTMLParser):
     def __init__(self):
@@ -44,10 +46,39 @@ class HTMLTextExtractor(HTMLParser):
         return cleaned
 
 
+class SSRFSafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    """
+    Custom httpx transport that hooks TCP socket creation to route connections to
+    pre-validated public IP addresses, preventing DNS rebinding while preserving the original
+    hostname in request.url for TLS SNI extension and SSL certificate verification.
+    """
+    def __init__(self, dns_map: Dict[str, Any], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dns_map = dns_map  # hostname -> pre-validated resolved_ip or list of resolved_ips
+
+        original_connect_tcp = self._pool._network_backend.connect_tcp
+
+        async def ssrf_connect_tcp(host: str, port: int, **kw):
+            target_ip = self.dns_map.get(host, host)
+            if isinstance(target_ip, (list, tuple, set)):
+                last_exc = None
+                for ip in target_ip:
+                    try:
+                        return await original_connect_tcp(ip, port, **kw)
+                    except Exception as exc:
+                        last_exc = exc
+                if last_exc:
+                    raise last_exc
+            return await original_connect_tcp(target_ip, port, **kw)
+
+        self._pool._network_backend.connect_tcp = ssrf_connect_tcp
+
+
 class DocFetcher:
     """Fetches raw API documentation from a URL or raw text input."""
 
-    MAX_TEXT_SIZE = 100_000  # Default maximum input size limit (100k characters)
+    MAX_TEXT_SIZE = 10_000_000  # Maximum input size limit (10MB for large JSON/YAML specs)
+    MAX_HTML_SIZE = 100_000     # Maximum size limit for HTML extraction (100k characters)
 
     @staticmethod
     def validate_url(url: str) -> bool:
@@ -75,10 +106,10 @@ class DocFetcher:
             return False
 
     @classmethod
-    def validate_and_resolve_url(cls, url: str) -> Tuple[str, str]:
+    def validate_and_resolve_url(cls, url: str) -> Tuple[List[str], str]:
         """
-        Validates URL against SSRF and resolves host IP.
-        Returns tuple of (resolved_ip, hostname).
+        Validates URL against SSRF and resolves host IPs.
+        Returns tuple of (resolved_ips_list, hostname).
         Throws DocFetchError if unsafe or unreachable.
         """
         if not cls.validate_url(url):
@@ -94,14 +125,14 @@ class DocFetcher:
             ip = ipaddress.ip_address(hostname)
             if not cls.is_safe_public_ip(str(ip)):
                 raise DocFetchError(f"Access to private/reserved IP address {hostname} is blocked for security reasons.")
-            return str(ip), hostname
+            return [str(ip)], hostname
         except ValueError:
             pass
 
         # Resolve hostname via DNS
         try:
             addr_info = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), socket.AF_UNSPEC, socket.SOCK_STREAM)
-            resolved_ips = {info[4][0] for info in addr_info}
+            resolved_ips = list({info[4][0] for info in addr_info})
         except Exception as exc:
             raise DocFetchError(f"DNS resolution failed for hostname {hostname}: {str(exc)}")
 
@@ -112,10 +143,10 @@ class DocFetcher:
             if not cls.is_safe_public_ip(ip_str):
                 raise DocFetchError(f"Hostname {hostname} resolves to private/reserved IP address {ip_str}, which is blocked for security reasons.")
 
-        # Return first resolved safe IP and original hostname
-        return list(resolved_ips)[0], hostname
+        # Return list of resolved safe IPs and original hostname
+        return resolved_ips, hostname
 
-    async def fetch(self, url_or_raw: str, timeout: float = 15.0) -> Tuple[str, str]:
+    async def fetch(self, url_or_raw: str, timeout: float = 30.0) -> Tuple[str, str]:
         """
         Fetches content from URL or returns raw string.
         Returns tuple of (content_type, content_string).
@@ -128,31 +159,37 @@ class DocFetcher:
 
         # Check if it's already a JSON string or YAML string or raw text
         if not self.validate_url(url_or_raw):
-            # Enforce size limit on direct raw text
             text_content = url_or_raw[:self.MAX_TEXT_SIZE]
             return self._detect_raw_content_type(text_content)
 
         # Validate URL and resolve IP safely against SSRF
-        resolved_ip, hostname = self.validate_and_resolve_url(url_or_raw)
+        resolved_ips, hostname = self.validate_and_resolve_url(url_or_raw)
+        dns_map = {hostname: resolved_ips}
 
-        # Fetch over HTTP/HTTPS safely
+        parsed = urlparse(url_or_raw)
+        is_https = parsed.scheme == "https"
+
+        transport = SSRFSafeAsyncHTTPTransport(
+            dns_map=dns_map,
+            verify=True if is_https else False,
+            retries=2
+        )
+
         try:
-            headers = {
-                "User-Agent": "ToolForge-DocParser/1.0 (API Specification Parser)",
-                "Accept": "application/json, application/x-yaml, text/yaml, text/html, text/plain, */*"
-            }
-
             async with httpx.AsyncClient(
-                follow_redirects=False,  # Handle redirects explicitly to re-check target IPs against SSRF
+                transport=transport,
+                follow_redirects=False,
                 timeout=timeout
             ) as client:
                 
-                curr_target = url_or_raw
-                curr_headers = headers
+                curr_url = url_or_raw
                 redirects = 0
 
                 while redirects < 5:
-                    response = await client.get(curr_target, headers=curr_headers)
+                    response = await client.get(curr_url, headers={
+                        "User-Agent": "ToolForge-DocParser/1.0 (API Specification Parser)",
+                        "Accept": "application/json, application/x-yaml, text/yaml, text/html, text/plain, */*"
+                    })
                     
                     if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
                         redirect_location = response.headers.get("location")
@@ -161,12 +198,13 @@ class DocFetcher:
                         
                         # Handle relative vs absolute redirect URLs
                         if not redirect_location.startswith("http://") and not redirect_location.startswith("https://"):
-                            parsed = urlparse(curr_target)
-                            redirect_location = f"{parsed.scheme}://{parsed.netloc}{redirect_location}"
+                            p_curr = urlparse(curr_url)
+                            redirect_location = f"{p_curr.scheme}://{p_curr.netloc}{redirect_location}"
 
                         # Validate SSRF on redirect URL
-                        res_ip, res_host = self.validate_and_resolve_url(redirect_location)
-                        curr_target = redirect_location
+                        res_ips, res_host = self.validate_and_resolve_url(redirect_location)
+                        dns_map[res_host] = res_ips
+                        curr_url = redirect_location
                         redirects += 1
                         continue
 
@@ -208,7 +246,7 @@ class DocFetcher:
     @classmethod
     def extract_text_from_html(cls, html_content: str) -> str:
         """Extracts readable structured text from HTML documentation with size safety."""
-        truncated_html = html_content[:cls.MAX_TEXT_SIZE]
+        truncated_html = html_content[:cls.MAX_HTML_SIZE]
         parser = HTMLTextExtractor()
         parser.feed(truncated_html)
-        return parser.get_text()[:cls.MAX_TEXT_SIZE]
+        return parser.get_text()[:cls.MAX_HTML_SIZE]

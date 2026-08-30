@@ -34,41 +34,14 @@ class APIParser:
             content_type, raw_content = await self.fetcher.fetch(url_or_str)
         except DocFetchError as exc:
             logger.error(f"Doc fetch error: {exc}")
-            # If example/sample URL, provide standard User Management sample spec
-            from api_parser.schemas import EndpointSchema, ParameterSchema
-            fallback_spec = NormalizedAPISpec(
-                api_name="User Management",
-                description="Sample User Management API",
-                base_url="https://api.example.com",
-                source_url=source_url,
-                endpoints=[
-                    EndpointSchema(
-                        name="get_user",
-                        method="GET",
-                        path="/api/v1/users/{id}",
-                        description="Retrieve detailed information for a specific user by their unique identifier.",
-                        parameters=[ParameterSchema(name="id", type="integer", in_location="path", required=True, description="User ID")]
-                    ),
-                    EndpointSchema(
-                        name="list_users",
-                        method="GET",
-                        path="/api/v1/users",
-                        description="Get a paginated list of all users in the system.",
-                        parameters=[ParameterSchema(name="limit", type="integer", in_location="query", required=False, description="Limit")]
-                    ),
-                    EndpointSchema(
-                        name="create_user",
-                        method="POST",
-                        path="/api/v1/users",
-                        description="Provision a new user account with specified roles and permissions.",
-                        parameters=[
-                            ParameterSchema(name="name", type="string", in_location="body", required=True, description="User Name"),
-                            ParameterSchema(name="email", type="string", in_location="body", required=True, description="User Email")
-                        ]
-                    )
-                ]
+            # Return empty normalized spec with error details gracefully
+            return self.normalizer.normalize(
+                NormalizedAPISpec(
+                    api_name="Inaccessible Documentation",
+                    description=f"Error fetching documentation: {str(exc)}",
+                    source_url=source_url
+                )
             )
-            return self.normalizer.normalize(fallback_spec)
         except Exception as exc:
             logger.error(f"Unexpected error during doc fetch: {exc}")
             return self.normalizer.normalize(

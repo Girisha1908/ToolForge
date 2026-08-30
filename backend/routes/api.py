@@ -13,14 +13,17 @@ from tool_generator.schemas import (
     ToolExecutionResult
 )
 from tool_executor.executor import ToolExecutor, ToolExecutionError
-from agent.agent import AgentEngine
+from agent.runtime import AgentRuntime
+from agent.schemas import AgentResponse, AgentRunRequest
 
 router = APIRouter()
 
 parser_instance = APIParser()
 generator_instance = ConnectorGenerator()
 executor_instance = ToolExecutor()
-agent_instance = AgentEngine()
+agent_runtime_instance = AgentRuntime()
+
+ERROR_SPEC_TITLES = {"Inaccessible Documentation", "Invalid Documentation Source", "Malformed Documentation"}
 
 
 class ParseDocRequest(BaseModel):
@@ -41,29 +44,21 @@ def status():
 async def parse_documentation(request: ParseDocRequest):
     """
     Ingests and parses API documentation from a URL or raw content string.
-    Returns a normalized structured API specification and automatically registers generated tools.
+    Returns a normalized structured API specification.
     """
     if not request.url or not request.url.strip():
         raise HTTPException(status_code=400, detail="Documentation URL or content cannot be empty.")
 
     try:
         spec = await parser_instance.parse_doc(request.url)
-        # Automatically generate and register tools in default_registry
-        connector = await generator_instance.generate_async(spec)
-        default_registry.register_tools(connector.tools)
-        
-        tool_names = [t.name for t in connector.tools]
-        logger.info(f"[DEBUG] parse-doc registered {len(connector.tools)} tools in registry: {tool_names}")
-        print(f"[DEBUG] parse-doc registered {len(connector.tools)} tools in registry: {tool_names}")
-        
+        if spec.api_name in ERROR_SPEC_TITLES:
+            raise HTTPException(status_code=400, detail=spec.description or "Failed to fetch or parse documentation.")
         return spec
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to process documentation: {str(exc)}")
 
-
-import logging
-
-logger = logging.getLogger("ToolForge.API")
 
 @router.post("/generate-tools", response_model=GeneratedConnector)
 async def generate_tools(request: GenerateToolsRequest):
@@ -76,16 +71,21 @@ async def generate_tools(request: GenerateToolsRequest):
             raise HTTPException(status_code=400, detail="Must provide either 'spec' object or 'url' string.")
         spec = await parser_instance.parse_doc(request.url)
 
+    if spec.api_name in ERROR_SPEC_TITLES:
+        raise HTTPException(status_code=400, detail=spec.description or "Failed to fetch or parse documentation.")
+
     try:
         connector = await generator_instance.generate_async(spec)
+        if not connector.tools:
+            raise HTTPException(
+                status_code=400,
+                detail="No tools could be generated from the provided URL. Please enter an API documentation URL (OpenAPI, Swagger, Postman, or HTML documentation) rather than a direct API endpoint."
+            )
+        default_registry.clear()
         default_registry.register_tools(connector.tools)
-        
-        # Temporary safe debug logging
-        tool_names = [t.name for t in connector.tools]
-        logger.info(f"[DEBUG] Generated and registered {len(connector.tools)} tools: {tool_names}")
-        print(f"[DEBUG] Generated and registered {len(connector.tools)} tools: {tool_names}")
-        
         return connector
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate tools from API specification: {str(exc)}")
 
@@ -130,21 +130,21 @@ async def execute_tool(
         raise HTTPException(status_code=500, detail=f"Tool execution failed: {str(exc)}")
 
 
-class AgentChatRequest(BaseModel):
-    message: str = Field(description="User prompt/message for the agent")
-
-
-@router.post("/agent/chat")
-async def agent_chat(request: AgentChatRequest):
+@router.post("/agent/run", response_model=AgentResponse)
+async def run_agent(request: AgentRunRequest):
     """
-    Agent chat endpoint that takes user prompt, runs the AgentEngine against registered tools.
+    Runs the agent runtime with a user prompt and tool definitions.
+    Dynamically executes requested tools and returns a structured AgentResponse.
     """
-    tools = default_registry.list_tools()
-    
-    # Temporary safe debug logging
-    tool_names = [t.name for t in tools]
-    logger.info(f"[DEBUG] agent_chat called with prompt: '{request.message}'. Tools available in registry ({len(tools)}): {tool_names}")
-    print(f"[DEBUG] agent_chat called with prompt: '{request.message}'. Tools available in registry ({len(tools)}): {tool_names}")
-    
-    result = await agent_instance.run(request.message, tools)
-    return result
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="User message cannot be empty.")
+
+    try:
+        response = await agent_runtime_instance.run_async(
+            user_message=request.message,
+            tools=request.tools,
+            max_iterations=request.max_iterations
+        )
+        return response
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Agent execution error: {str(exc)}")
