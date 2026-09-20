@@ -33,18 +33,21 @@ class AuthHandler:
         header_or_param_name = auth_config.name if (auth_config and auth_config.name) else "Authorization"
 
         # 1. Basic Authentication (supports TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN or BASIC_AUTH_TOKEN)
-        account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-        auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-        raw_basic = os.environ.get("BASIC_AUTH_TOKEN") or os.environ.get("BASIC_AUTH_CREDENTIALS")
+        # Only applied when the tool actually declares basic auth - otherwise these credentials
+        # would occupy the Authorization header and starve bearer/api_key tools of their token.
+        if auth_type == "basic":
+            account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+            auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+            raw_basic = os.environ.get("BASIC_AUTH_TOKEN") or os.environ.get("BASIC_AUTH_CREDENTIALS")
 
-        if self.is_valid_credential(account_sid) and self.is_valid_credential(auth_token):
-            user_pass = f"{account_sid.strip()}:{auth_token.strip()}"
-            headers["Authorization"] = f"Basic {base64.b64encode(user_pass.encode()).decode()}"
-        elif self.is_valid_credential(raw_basic):
-            basic_str = raw_basic.strip()
-            if not basic_str.lower().startswith("basic "):
-                basic_str = f"Basic {basic_str}"
-            headers["Authorization"] = basic_str
+            if self.is_valid_credential(account_sid) and self.is_valid_credential(auth_token):
+                user_pass = f"{account_sid.strip()}:{auth_token.strip()}"
+                headers["Authorization"] = f"Basic {base64.b64encode(user_pass.encode()).decode()}"
+            elif self.is_valid_credential(raw_basic):
+                basic_str = raw_basic.strip()
+                if not basic_str.lower().startswith("basic "):
+                    basic_str = f"Basic {basic_str}"
+                headers["Authorization"] = basic_str
 
         # 2. Bearer Authentication
         if "Authorization" not in headers and auth_type == "bearer":

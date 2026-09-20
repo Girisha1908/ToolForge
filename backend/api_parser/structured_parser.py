@@ -425,7 +425,7 @@ class StructuredSpecParser:
                         ))
 
         return EndpointSchema(
-            name=re.sub(r'[^a_zA_Z0_9_]', '_', name.lower()).strip('_'),
+            name=re.sub(r'[^a-zA-Z0-9_]', '_', name.lower()).strip('_'),
             summary=name,
             method=method,
             path=path if path.startswith("/") else "/" + path,

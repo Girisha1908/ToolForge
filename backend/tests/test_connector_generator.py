@@ -451,6 +451,23 @@ class TestAuthHandler(unittest.TestCase):
         self.assertNotIn("secret_auth_token_999", result_json)
         self.assertNotIn("AC1234567890abcdef", result_json)
 
+    @patch.dict(os.environ, {
+        "TWILIO_ACCOUNT_SID": "AC1234567890abcdef",
+        "TWILIO_AUTH_TOKEN": "secret_auth_token_999",
+        "AUTH_BEARER_TOKEN": "my_bearer_token_456"
+    }, clear=True)
+    def test_bearer_tool_not_clobbered_by_twilio_basic_auth(self):
+        """
+        Regression test: when both Twilio/basic-auth env vars AND a bearer token are
+        configured, a bearer-type tool must still get its Bearer token, not the Twilio
+        Basic auth header.
+        """
+        headers = {}
+        query = {}
+        auth = AuthenticationSchema(type="bearer", in_location="header", name="Authorization")
+        self.auth_handler.apply_auth(headers, query, auth)
+        self.assertEqual(headers.get("Authorization"), "Bearer my_bearer_token_456")
+
 
 if __name__ == "__main__":
     unittest.main()

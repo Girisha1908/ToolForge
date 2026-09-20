@@ -208,6 +208,7 @@ class TestStructuredSpecParser(unittest.TestCase):
         self.assertEqual(len(spec.endpoints), 1)
         self.assertEqual(spec.endpoints[0].method, "GET")
         self.assertEqual(spec.endpoints[0].path, "/items")
+        self.assertEqual(spec.endpoints[0].name, "search_items")
 
 
 class TestTextDocParser(unittest.TestCase):
