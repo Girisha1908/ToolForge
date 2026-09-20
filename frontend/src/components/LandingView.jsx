@@ -38,7 +38,7 @@ export default function LandingView({ onAnalyze }) {
           <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
           
           <form onSubmit={handleSubmit} className="flex flex-col gap-unit-4">
-            <label className="font-mono text-xs text-on-surface-variant uppercase tracking-widest text-left flex items-center justify-between">
+            <label htmlFor="api-doc-url" className="font-mono text-xs text-on-surface-variant uppercase tracking-widest text-left flex items-center justify-between">
               <span>API Documentation URL</span>
               <span className="text-[10px] text-outline flex items-center gap-1 opacity-80">
                 <span className="material-symbols-outlined text-[14px]">bolt</span> OpenAPI 3.0+, Swagger 2.0, Postman
@@ -51,6 +51,7 @@ export default function LandingView({ onAnalyze }) {
                   link
                 </span>
                 <input
+                  id="api-doc-url"
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}

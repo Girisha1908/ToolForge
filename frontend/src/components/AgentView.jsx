@@ -151,7 +151,9 @@ export default function AgentView({ activeTools, onAgentResponse }) {
 
       {/* Input Box Bar */}
       <form onSubmit={handleSend} className="relative mt-auto pt-2">
+        <label htmlFor="agent-prompt" className="sr-only">Prompt for the agent</label>
         <input
+          id="agent-prompt"
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
@@ -161,9 +163,10 @@ export default function AgentView({ activeTools, onAgentResponse }) {
         <button
           type="submit"
           disabled={!inputMessage.trim() || isProcessing}
+          aria-label="Send prompt to agent"
           className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span className="material-symbols-outlined text-sm">send</span>
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">send</span>
         </button>
       </form>
     </div>

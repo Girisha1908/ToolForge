@@ -75,7 +75,7 @@ export default function ExecutionConsole({ selectedTool }) {
     if (jsonBodyText && jsonBodyText.trim()) {
       try {
         payloadArgs._raw_body = JSON.parse(jsonBodyText.trim());
-      } catch (err) {
+      } catch {
         setExecutionState('error');
         setErrorMsg('Invalid JSON format in Request Body text area.');
         return;
@@ -154,7 +154,7 @@ export default function ExecutionConsole({ selectedTool }) {
             toolParams.map((param) => (
               <div key={param.name} className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
+                  <label htmlFor={`arg-${param.name}`} className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
                     <span>{param.name}</span>
                     {param.required && (
                       <span className="text-[10px] text-tertiary bg-tertiary/10 px-1.5 py-0.2 rounded font-mono uppercase">
@@ -166,6 +166,7 @@ export default function ExecutionConsole({ selectedTool }) {
                 </div>
 
                 <input
+                  id={`arg-${param.name}`}
                   type="text"
                   value={argValues[param.name] || ''}
                   onChange={(e) => handleArgChange(param.name, e.target.value)}
@@ -180,7 +181,7 @@ export default function ExecutionConsole({ selectedTool }) {
           {hasBodySchema && (
             <div className="flex flex-col gap-1.5 pt-2 border-t border-outline-variant/20">
               <div className="flex items-center justify-between">
-                <label className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
+                <label htmlFor="request-body-json" className="font-mono text-xs text-on-surface font-semibold flex items-center gap-2">
                   <span>Request Body (JSON)</span>
                   <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-mono uppercase">
                     APPLICATION/JSON
@@ -189,6 +190,7 @@ export default function ExecutionConsole({ selectedTool }) {
               </div>
 
               <textarea
+                id="request-body-json"
                 rows={6}
                 value={jsonBodyText}
                 onChange={(e) => setJsonBodyText(e.target.value)}

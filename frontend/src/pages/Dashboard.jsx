@@ -80,10 +80,12 @@ export default function Dashboard({ activeTab }) {
         <h2 className="text-2xl font-bold text-on-surface mb-2">ToolForge Documentation</h2>
         <p className="text-sm text-on-surface-variant mb-6">Learn how ToolForge automatically generates executable agent tools from API documentation.</p>
         <div className="bg-surface-container p-6 rounded-xl border border-outline-variant/30 font-mono text-xs text-on-surface-variant space-y-4">
+          {/* eslint-disable react/jsx-no-comment-textnodes -- intentional: styled as code comments, not actual JSX comments */}
           <p className="text-primary font-bold">// 1. Provide API documentation URL (OpenAPI, Swagger, Postman, HTML)</p>
           <p>// 2. ToolForge ingests endpoints, parameter schemas, and authentication</p>
           <p>// 3. Generates validated tool definitions registered in ToolRegistry</p>
           <p>// 4. Executes dynamic HTTP requests through secure executor & Agent Runtime</p>
+          {/* eslint-enable react/jsx-no-comment-textnodes */}
         </div>
       </div>
     );
