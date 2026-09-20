@@ -957,7 +957,39 @@ Create an environment file based on:
 
 Add the required API credentials.
 
-## Start the backend
+## Run with Docker (fastest way to try it)
+
+Requires [Docker](https://docs.docker.com/get-docker/) and Docker Compose.
+
+```bash
+cp .env.example .env   # then fill in GEMINI_API_KEY and any other credentials you need
+
+docker compose up --build
+```
+
+This builds and starts both services:
+
+* Backend — FastAPI, served at `http://localhost:8000`
+* Frontend — built with Vite, served via nginx at `http://localhost:5173`
+
+Then open `http://localhost:5173` in your browser.
+
+Notes:
+
+* `VITE_API_BASE_URL` (and the optional `VITE_TOOLFORGE_API_KEY`) are baked into the frontend's
+  static build at image-build time, not read at container-startup time. If you need the frontend
+  to point somewhere other than `http://localhost:8000`, set `VITE_API_BASE_URL` in your `.env`
+  file *before* running `docker compose up --build` — changing it afterwards requires a rebuild
+  (`docker compose build frontend`), not just a restart.
+* To stop everything: `docker compose down`.
+* This setup is intended for local development and demos, not production deployment (no HTTPS,
+  no non-root users, no persistent storage beyond the container lifetime).
+
+## Manual setup (without Docker)
+
+If you'd rather run each service directly:
+
+### Start the backend
 
 ```bash
 cd backend
@@ -981,7 +1013,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-## Start the frontend
+### Start the frontend
 
 In a separate terminal window:
 
