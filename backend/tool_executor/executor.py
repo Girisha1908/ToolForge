@@ -155,10 +155,13 @@ class ToolExecutor:
             )
 
     def _validate_arguments(self, tool: ToolDefinition, arguments: Dict[str, Any]) -> None:
-        """Validates that all required parameters are supplied in arguments."""
+        """Validates that all required parameters (path, query, or header) are supplied in arguments."""
         missing = []
         for param in tool.parameters:
-            if param.required and param.name not in arguments and f"{{{param.name}}}" in tool.path:
+            if not param.required or param.name in arguments:
+                continue
+            is_path_param = f"{{{param.name}}}" in tool.path
+            if is_path_param or param.in_location in ("query", "header"):
                 missing.append(param.name)
 
         if missing:

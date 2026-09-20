@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Path
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Body, Path
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
@@ -15,8 +16,12 @@ from tool_generator.schemas import (
 from tool_executor.executor import ToolExecutor, ToolExecutionError
 from agent.runtime import AgentRuntime
 from agent.schemas import AgentResponse, AgentRunRequest
+from routes.security import verify_api_key
+
+logger = logging.getLogger("ToolForge.Routes")
 
 router = APIRouter()
+protected_router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 parser_instance = APIParser()
 generator_instance = ConnectorGenerator()
@@ -40,7 +45,7 @@ def status():
     return {"status": "ok"}
 
 
-@router.post("/parse-doc", response_model=NormalizedAPISpec)
+@protected_router.post("/parse-doc", response_model=NormalizedAPISpec)
 async def parse_documentation(request: ParseDocRequest):
     """
     Ingests and parses API documentation from a URL or raw content string.
@@ -56,11 +61,12 @@ async def parse_documentation(request: ParseDocRequest):
         return spec
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to process documentation: {str(exc)}")
+    except Exception:
+        logger.exception("Failed to process documentation for url=%r", request.url)
+        raise HTTPException(status_code=500, detail="Failed to process documentation due to an internal error.")
 
 
-@router.post("/generate-tools", response_model=GeneratedConnector)
+@protected_router.post("/generate-tools", response_model=GeneratedConnector)
 async def generate_tools(request: GenerateToolsRequest):
     """
     Generates agent-ready tool definitions from a NormalizedAPISpec (or URL) and registers them in the ToolRegistry.
@@ -86,11 +92,12 @@ async def generate_tools(request: GenerateToolsRequest):
         return connector
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to generate tools from API specification: {str(exc)}")
+    except Exception:
+        logger.exception("Failed to generate tools from API specification")
+        raise HTTPException(status_code=500, detail="Failed to generate tools from the API specification due to an internal error.")
 
 
-@router.get("/tools", response_model=List[ToolDefinition])
+@protected_router.get("/tools", response_model=List[ToolDefinition])
 def list_tools():
     """
     Lists all registered agent tools currently stored in the in-memory tool registry.
@@ -98,7 +105,7 @@ def list_tools():
     return default_registry.list_tools()
 
 
-@router.get("/tools/{tool_id}", response_model=ToolDefinition)
+@protected_router.get("/tools/{tool_id}", response_model=ToolDefinition)
 def get_tool(tool_id: str = Path(description="Tool ID or unique name")):
     """
     Retrieves a single tool definition from the registry.
@@ -109,7 +116,7 @@ def get_tool(tool_id: str = Path(description="Tool ID or unique name")):
     return tool
 
 
-@router.post("/tools/{tool_id}/execute", response_model=ToolExecutionResult)
+@protected_router.post("/tools/{tool_id}/execute", response_model=ToolExecutionResult)
 async def execute_tool(
     tool_id: str = Path(description="Tool ID or unique name"),
     request: ToolExecutionRequest = Body(...)
@@ -126,11 +133,12 @@ async def execute_tool(
         return result
     except ToolExecutionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Tool execution failed: {str(exc)}")
+    except Exception:
+        logger.exception("Tool execution failed for tool_id=%r", tool_id)
+        raise HTTPException(status_code=500, detail="Tool execution failed due to an internal error.")
 
 
-@router.post("/agent/run", response_model=AgentResponse)
+@protected_router.post("/agent/run", response_model=AgentResponse)
 async def run_agent(request: AgentRunRequest):
     """
     Runs the agent runtime with a user prompt and tool definitions.
@@ -146,5 +154,9 @@ async def run_agent(request: AgentRunRequest):
             max_iterations=request.max_iterations
         )
         return response
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Agent execution error: {str(exc)}")
+    except Exception:
+        logger.exception("Agent execution error")
+        raise HTTPException(status_code=500, detail="Agent execution failed due to an internal error.")
+
+
+router.include_router(protected_router)

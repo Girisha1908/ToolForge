@@ -291,6 +291,23 @@ class TestToolExecutor(unittest.TestCase):
             asyncio.run(self.executor.execute(tool, arguments={}))
         self.assertIn("Missing required arguments", str(ctx.exception))
 
+    def test_missing_required_query_argument(self):
+        """Regression test: required query/header params must be enforced too, not just path params."""
+        tool = ToolDefinition(
+            id="search_items",
+            name="search_items",
+            description="Search Items",
+            method="GET",
+            path="/items",
+            parameters=[
+                ToolParameter(name="q", in_location="query", required=True)
+            ]
+        )
+        with self.assertRaises(ToolExecutionError) as ctx:
+            asyncio.run(self.executor.execute(tool, arguments={}))
+        self.assertIn("Missing required arguments", str(ctx.exception))
+        self.assertIn("q", ctx.exception.details.get("missing_arguments", []))
+
     @patch("httpx.AsyncClient.request", new_callable=AsyncMock)
     @patch("api_parser.fetcher.DocFetcher.validate_and_resolve_url")
     def test_path_parameter_url_encoding(self, mock_resolve, mock_httpx):
@@ -467,6 +484,21 @@ class TestAuthHandler(unittest.TestCase):
         auth = AuthenticationSchema(type="bearer", in_location="header", name="Authorization")
         self.auth_handler.apply_auth(headers, query, auth)
         self.assertEqual(headers.get("Authorization"), "Bearer my_bearer_token_456")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_oauth2_rejected_explicitly_instead_of_running_unauthenticated(self):
+        """
+        Regression test: OAuth2-typed tools must be explicitly rejected, not silently
+        executed with no authentication at all.
+        """
+        headers = {}
+        query = {}
+        auth = AuthenticationSchema(type="oauth2", in_location="header", name="Authorization")
+        with self.assertRaises(ToolExecutionError) as ctx:
+            self.auth_handler.apply_auth(headers, query, auth)
+        self.assertEqual(ctx.exception.status_code, 401)
+        self.assertIn("oauth2", ctx.exception.message.lower())
+        self.assertEqual(headers, {})
 
 
 if __name__ == "__main__":

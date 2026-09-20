@@ -73,7 +73,17 @@ class AuthHandler:
                 else:
                     headers[header_or_param_name] = api_key_val.strip()
 
-        # 4. Error check if authentication was required by schema but no valid credentials exist in server environment
+        # 4. OAuth2 is not implemented - reject explicitly rather than silently executing unauthenticated
+        if auth_type == "oauth2":
+            from tool_executor.executor import ToolExecutionError
+            raise ToolExecutionError(
+                message="Tool requires 'oauth2' authentication, which is not supported by ToolForge's "
+                        "server-side credential model (env-var based bearer/api_key/basic only). "
+                        "This tool cannot be executed until OAuth2 support is added.",
+                status_code=401
+            )
+
+        # 5. Error check if authentication was required by schema but no valid credentials exist in server environment
         if (
             auth_type in ["basic", "bearer", "api_key"]
             and "Authorization" not in headers
