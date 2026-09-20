@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, List, Optional
 from tool_generator.schemas import ToolDefinition
 
@@ -12,6 +13,7 @@ class ToolRegistry:
             cls._instance = super(ToolRegistry, cls).__new__(cls)
             cls._instance._tools_by_id: Dict[str, ToolDefinition] = {}
             cls._instance._name_to_id: Dict[str, str] = {}
+            cls._instance._lock = asyncio.Lock()
         return cls._instance
 
     def register_tool(self, tool: ToolDefinition) -> None:
@@ -43,6 +45,16 @@ class ToolRegistry:
         """Clears all tools in the registry (useful for testing)."""
         self._tools_by_id.clear()
         self._name_to_id.clear()
+
+    async def replace_tools(self, tools: List[ToolDefinition]) -> None:
+        """
+        Atomically clears the registry and registers a new set of tools, guarded by a lock so
+        a concurrent read (or another replace) can never observe an empty/partially-populated
+        registry mid-swap.
+        """
+        async with self._lock:
+            self.clear()
+            self.register_tools(tools)
 
 
 # Global default registry instance

@@ -1,10 +1,18 @@
 import httpx
+import logging
 import re
 import socket
 import ipaddress
 from urllib.parse import urlparse
 from html.parser import HTMLParser
 from typing import Tuple, Dict, Any, Optional, List
+
+logger = logging.getLogger("ToolForge.Fetcher")
+
+# Cap applied to every connection attempt except the last candidate IP, so a single
+# transiently-unreachable address can't burn the entire request timeout before falling
+# back to the next resolved IP.
+NON_FINAL_CANDIDATE_TIMEOUT = 3.0
 
 
 class DocFetchError(Exception):
@@ -46,6 +54,26 @@ class HTMLTextExtractor(HTMLParser):
         return cleaned
 
 
+async def connect_with_ip_fallback(original_connect_tcp, candidates: List[str], port: int, **kw):
+    """
+    Tries each candidate IP in order, applying a capped timeout to every attempt except the
+    last so a single transiently-unreachable address can't consume the full request timeout
+    before falling back to the next resolved IP. Raises the last exception if all fail.
+    """
+    last_exc = None
+    for idx, ip in enumerate(candidates):
+        attempt_kw = dict(kw)
+        is_last = idx == len(candidates) - 1
+        if not is_last and attempt_kw.get("timeout") is not None:
+            attempt_kw["timeout"] = min(attempt_kw["timeout"], NON_FINAL_CANDIDATE_TIMEOUT)
+        try:
+            return await original_connect_tcp(ip, port, **attempt_kw)
+        except Exception as exc:
+            logger.warning(f"Connect attempt to {ip}:{port} failed: {exc}")
+            last_exc = exc
+    raise last_exc
+
+
 class SSRFSafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
     """
     Custom httpx transport that hooks TCP socket creation to route connections to
@@ -61,14 +89,7 @@ class SSRFSafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
         async def ssrf_connect_tcp(host: str, port: int, **kw):
             target_ip = self.dns_map.get(host, host)
             if isinstance(target_ip, (list, tuple, set)):
-                last_exc = None
-                for ip in target_ip:
-                    try:
-                        return await original_connect_tcp(ip, port, **kw)
-                    except Exception as exc:
-                        last_exc = exc
-                if last_exc:
-                    raise last_exc
+                return await connect_with_ip_fallback(original_connect_tcp, list(target_ip), port, **kw)
             return await original_connect_tcp(target_ip, port, **kw)
 
         self._pool._network_backend.connect_tcp = ssrf_connect_tcp
@@ -186,42 +207,55 @@ class DocFetcher:
                 redirects = 0
 
                 while redirects < 5:
-                    response = await client.get(curr_url, headers={
+                    async with client.stream("GET", curr_url, headers={
                         "User-Agent": "ToolForge-DocParser/1.0 (API Specification Parser)",
                         "Accept": "application/json, application/x-yaml, text/yaml, text/html, text/plain, */*"
-                    })
-                    
-                    if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
-                        redirect_location = response.headers.get("location")
-                        if not redirect_location:
-                            break
-                        
-                        # Handle relative vs absolute redirect URLs
-                        if not redirect_location.startswith("http://") and not redirect_location.startswith("https://"):
-                            p_curr = urlparse(curr_url)
-                            redirect_location = f"{p_curr.scheme}://{p_curr.netloc}{redirect_location}"
+                    }) as response:
 
-                        # Validate SSRF on redirect URL
-                        res_ips, res_host = self.validate_and_resolve_url(redirect_location)
-                        dns_map[res_host] = res_ips
-                        curr_url = redirect_location
-                        redirects += 1
-                        continue
+                        if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
+                            redirect_location = response.headers.get("location")
+                            if not redirect_location:
+                                break
 
-                    if response.status_code >= 400:
-                        raise DocFetchError(f"HTTP Error {response.status_code} when fetching documentation: {response.reason_phrase}")
-                    
-                    content_type_header = response.headers.get("content-type", "").lower()
-                    text_content = response.text[:self.MAX_TEXT_SIZE]
+                            # Handle relative vs absolute redirect URLs
+                            if not redirect_location.startswith("http://") and not redirect_location.startswith("https://"):
+                                p_curr = urlparse(curr_url)
+                                redirect_location = f"{p_curr.scheme}://{p_curr.netloc}{redirect_location}"
 
-                    if "json" in content_type_header:
-                        return ("json", text_content)
-                    elif "yaml" in content_type_header or "yml" in content_type_header:
-                        return ("yaml", text_content)
-                    elif "html" in content_type_header:
-                        return ("html", text_content)
-                    else:
-                        return self._detect_raw_content_type(text_content)
+                            # Validate SSRF on redirect URL
+                            res_ips, res_host = self.validate_and_resolve_url(redirect_location)
+                            dns_map[res_host] = res_ips
+                            curr_url = redirect_location
+                            redirects += 1
+                            continue
+
+                        if response.status_code >= 400:
+                            raise DocFetchError(f"HTTP Error {response.status_code} when fetching documentation: {response.reason_phrase}")
+
+                        content_type_header = response.headers.get("content-type", "").lower()
+
+                        # Stream the body with a hard byte cap instead of buffering the full
+                        # response before truncating - protects against a malicious/oversized
+                        # response body being fully downloaded into memory first.
+                        chunks = []
+                        total_bytes = 0
+                        async for chunk in response.aiter_bytes():
+                            chunks.append(chunk)
+                            total_bytes += len(chunk)
+                            if total_bytes >= self.MAX_TEXT_SIZE:
+                                break
+                        raw_bytes = b"".join(chunks)[:self.MAX_TEXT_SIZE]
+                        encoding = response.charset_encoding or "utf-8"
+                        text_content = raw_bytes.decode(encoding, errors="replace")
+
+                        if "json" in content_type_header:
+                            return ("json", text_content)
+                        elif "yaml" in content_type_header or "yml" in content_type_header:
+                            return ("yaml", text_content)
+                        elif "html" in content_type_header:
+                            return ("html", text_content)
+                        else:
+                            return self._detect_raw_content_type(text_content)
 
                 raise DocFetchError("Too many HTTP redirects when fetching documentation.")
 

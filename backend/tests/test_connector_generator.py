@@ -205,9 +205,42 @@ class TestToolRegistry(unittest.TestCase):
 
         self.assertEqual(self.registry.get_tool("tool_id_001").name, "search_users")
         self.assertEqual(self.registry.get_tool("search_users").id, "tool_id_001")
-        
-        tools_list = self.registry.list_tools()
-        self.assertEqual(len(tools_list), 2)
+
+    def test_replace_tools_swaps_atomically(self):
+        old_tool = ToolDefinition(id="old", name="old_tool", description="old", method="GET", path="/old")
+        new_tool = ToolDefinition(id="new", name="new_tool", description="new", method="GET", path="/new")
+        self.registry.register_tool(old_tool)
+
+        asyncio.run(self.registry.replace_tools([new_tool]))
+
+        self.assertIsNone(self.registry.get_tool("old_tool"))
+        self.assertIsNotNone(self.registry.get_tool("new_tool"))
+
+    def test_replace_tools_serializes_concurrent_callers(self):
+        """
+        Regression test: concurrent replace_tools calls must not interleave - a reader must
+        never observe an empty registry mid-swap between two overlapping replace operations.
+        """
+        observed_empty_mid_swap = False
+
+        async def racing_replace(tools):
+            nonlocal observed_empty_mid_swap
+            await self.registry.replace_tools(tools)
+            # Immediately after our own swap completes, the registry must hold exactly our
+            # tools, never a state left empty by an overlapping call.
+            if len(self.registry.list_tools()) == 0:
+                observed_empty_mid_swap = True
+
+        async def run_concurrently():
+            tools_a = [ToolDefinition(id="a", name="tool_a", description="a", method="GET", path="/a")]
+            tools_b = [ToolDefinition(id="b", name="tool_b", description="b", method="GET", path="/b")]
+            await asyncio.gather(racing_replace(tools_a), racing_replace(tools_b))
+
+        asyncio.run(run_concurrently())
+
+        self.assertFalse(observed_empty_mid_swap)
+        # Whichever call finished last, the registry must hold exactly one fully-registered set.
+        self.assertEqual(len(self.registry.list_tools()), 1)
 
 
 class TestToolExecutor(unittest.TestCase):

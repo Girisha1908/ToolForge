@@ -13,6 +13,7 @@ from api_parser.schemas import (
     AuthenticationSchema,
     PaginationSchema
 )
+from common.gemini_client import generate_content_async
 
 class TextDocParser:
     """Parses plain text / extracted HTML documentation using pattern matching and optional LLM fallback."""
@@ -261,12 +262,8 @@ class TextDocParser:
         return re.sub(r'[^a-zA-Z0-9_]', '_', f"{method.lower()}_{suffix}").strip('_')
 
     async def _llm_parse_async(self, text: str, source_url: Optional[str]) -> Optional[NormalizedAPISpec]:
-        """Async Gemini LLM execution using asyncio.to_thread / async genai client to prevent event loop blocking."""
-        def _sync_call():
-            try:
-                from google import genai
-                client = genai.Client()
-                prompt = f"""
+        """Async Gemini LLM fallback parse. Returns None on any failure (timeout, bad JSON, etc.)."""
+        prompt = f"""
 Analyze the following API documentation text and extract structured API details.
 Return ONLY valid JSON with this exact structure:
 {{
@@ -308,19 +305,9 @@ Return ONLY valid JSON with this exact structure:
 API Documentation Content:
 {text[:4000]}
 """
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt
-                )
-
-                response_text = response.text.strip()
-                if response_text.startswith("```"):
-                    response_text = re.sub(r'^```[a-z]*\n', '', response_text)
-                    response_text = re.sub(r'\n```$', '', response_text)
-
-                data = json.loads(response_text)
-                return NormalizedAPISpec.model_validate(data)
-            except Exception:
-                return None
-
-        return await asyncio.to_thread(_sync_call)
+        try:
+            response_text = await generate_content_async(prompt, api_key=os.environ.get("GEMINI_API_KEY"))
+            data = json.loads(response_text)
+            return NormalizedAPISpec.model_validate(data)
+        except Exception:
+            return None

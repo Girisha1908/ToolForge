@@ -10,6 +10,7 @@ from tool_generator.schemas import ToolDefinition, ToolExecutionResult
 from tool_generator.registry import ToolRegistry, default_registry
 from tool_executor.executor import ToolExecutor, ToolExecutionError
 from agent.schemas import AgentResponse, ToolCallStep
+from common.gemini_client import generate_content_async, resolve_gemini_model
 
 logger = logging.getLogger("ToolForge.AgentRuntime")
 
@@ -19,7 +20,7 @@ class GeminiAgentService:
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, timeout: float = 15.0):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = resolve_gemini_model(model)
         self.timeout = timeout
 
     def is_available(self) -> bool:
@@ -95,21 +96,10 @@ INSTRUCTIONS:
 3. Return ONLY valid JSON for one of the two formats above.
 """
 
-        def _sync_call():
-            from google import genai
-            client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(
-                model=self.model,
-                contents=prompt
-            )
-            return response.text.strip()
-
         try:
-            response_text = await asyncio.wait_for(asyncio.to_thread(_sync_call), timeout=self.timeout)
-            if response_text.startswith("```"):
-                response_text = re.sub(r'^```[a-z]*\n', '', response_text)
-                response_text = re.sub(r'\n```$', '', response_text)
-
+            response_text = await generate_content_async(
+                prompt, api_key=self.api_key, model=self.model, timeout=self.timeout
+            )
             decision = json.loads(response_text)
             if isinstance(decision, dict) and "type" in decision:
                 return decision

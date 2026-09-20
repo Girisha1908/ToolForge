@@ -87,8 +87,7 @@ async def generate_tools(request: GenerateToolsRequest):
                 status_code=400,
                 detail="No tools could be generated from the provided URL. Please enter an API documentation URL (OpenAPI, Swagger, Postman, or HTML documentation) rather than a direct API endpoint."
             )
-        default_registry.clear()
-        default_registry.register_tools(connector.tools)
+        await default_registry.replace_tools(connector.tools)
         return connector
     except HTTPException:
         raise
