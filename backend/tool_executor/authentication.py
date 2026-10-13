@@ -24,7 +24,19 @@ class AuthHandler:
             return False
         return True
 
-    def apply_auth(self, headers: Dict[str, str], query_params: Dict[str, Any], auth_config: AuthenticationSchema) -> None:
+    @staticmethod
+    def _env(prefix: Optional[str], *suffixes: str) -> Optional[str]:
+        """First set env var among <PREFIX>_<SUFFIX>... (per-API credentials); None if no prefix given."""
+        if not prefix:
+            return None
+        for suffix in suffixes:
+            value = os.environ.get(f"{prefix}_{suffix}")
+            if AuthHandler.is_valid_credential(value):
+                return value
+        return None
+
+    def apply_auth(self, headers: Dict[str, str], query_params: Dict[str, Any], auth_config: AuthenticationSchema,
+                   env_prefix: Optional[str] = None) -> None:
         """
         Applies authentication headers or query parameters from server-side environment variables.
         Never hardcodes credentials or logs keys/tokens.
@@ -36,9 +48,11 @@ class AuthHandler:
         # Only applied when the tool actually declares basic auth - otherwise these credentials
         # would occupy the Authorization header and starve bearer/api_key tools of their token.
         if auth_type == "basic":
-            account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-            auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-            raw_basic = os.environ.get("BASIC_AUTH_TOKEN") or os.environ.get("BASIC_AUTH_CREDENTIALS")
+            # Per-API variables (<PREFIX>_USERNAME/_PASSWORD, or Twilio-style _ACCOUNT_SID/_AUTH_TOKEN) win
+            # over the old global ones, so two APIs can use different credentials at the same time.
+            account_sid = self._env(env_prefix, "USERNAME", "ACCOUNT_SID") or os.environ.get("TWILIO_ACCOUNT_SID")
+            auth_token = self._env(env_prefix, "PASSWORD", "AUTH_TOKEN") or os.environ.get("TWILIO_AUTH_TOKEN")
+            raw_basic = self._env(env_prefix, "BASIC_AUTH") or os.environ.get("BASIC_AUTH_TOKEN") or os.environ.get("BASIC_AUTH_CREDENTIALS")
 
             if self.is_valid_credential(account_sid) and self.is_valid_credential(auth_token):
                 user_pass = f"{account_sid.strip()}:{auth_token.strip()}"
@@ -52,7 +66,8 @@ class AuthHandler:
         # 2. Bearer Authentication
         if "Authorization" not in headers and auth_type == "bearer":
             bearer_token = (
-                os.environ.get("AUTH_BEARER_TOKEN")
+                self._env(env_prefix, "BEARER_TOKEN", "TOKEN")
+                or os.environ.get("AUTH_BEARER_TOKEN")
                 or os.environ.get("API_BEARER_TOKEN")
                 or os.environ.get("BEARER_TOKEN")
                 or os.environ.get("TWILIO_BEARER_TOKEN")
@@ -63,7 +78,8 @@ class AuthHandler:
         # 3. API Key Authentication
         if auth_type == "api_key":
             api_key_val = (
-                os.environ.get("API_KEY")
+                self._env(env_prefix, "API_KEY")
+                or os.environ.get("API_KEY")
                 or os.environ.get("X_API_KEY")
                 or os.environ.get("TWILIO_API_KEY")
             )

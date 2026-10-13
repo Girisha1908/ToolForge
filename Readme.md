@@ -104,6 +104,25 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## 🔌 Use it from VS Code / Claude Code (MCP)
+
+ToolForge can serve any imported API to your coding agent as MCP tools, so you never read the
+docs by hand again.
+
+```bash
+cd backend
+python -m mcp_server import https://petstore3.swagger.io/api/v3/openapi.json --name petstore
+python -m mcp_server doctor petstore      # which credential variables are set (never prints values)
+python -m mcp_server config petstore      # prints the VS Code / Claude Code setup to paste
+python -m mcp_server skill petstore --out SKILL.md   # a skill file that tells agents when to use it
+```
+
+Credentials are per API environment variables: `PETSTORE_API_KEY`, `PETSTORE_BEARER_TOKEN`,
+`PETSTORE_USERNAME` + `PETSTORE_PASSWORD` (or `_ACCOUNT_SID` + `_AUTH_TOKEN`). The older global
+names still work. Safety: the model only supplies arguments; tools that change data return a
+preview until the agent passes `confirm: true`; secrets are scrubbed from output; responses are
+trimmed; all requests go through the SSRF-safe executor.
+
 ## 🧪 Testing
 
 ```bash

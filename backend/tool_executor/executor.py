@@ -29,7 +29,8 @@ class ToolExecutor:
         self.timeout = timeout
         self.auth_handler = AuthHandler()
 
-    async def execute(self, tool: ToolDefinition, arguments: Dict[str, Any]) -> ToolExecutionResult:
+    async def execute(self, tool: ToolDefinition, arguments: Dict[str, Any],
+                      env_prefix: Optional[str] = None) -> ToolExecutionResult:
         start_time = time.time()
 
         # Step 1: Validate required arguments
@@ -68,7 +69,7 @@ class ToolExecutor:
                 headers["Content-Type"] = "application/json"
 
         # Apply authentication safely
-        self.auth_handler.apply_auth(headers, query_params, tool.authentication)
+        self.auth_handler.apply_auth(headers, query_params, tool.authentication, env_prefix=env_prefix)
 
         # Step 3: Validate target URL against SSRF safety rules
         resolved_ip, hostname = DocFetcher.validate_and_resolve_url(target_url)
